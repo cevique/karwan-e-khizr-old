@@ -13,6 +13,7 @@ out of scope for this step and will be added in later ones.
 
 from fastapi import FastAPI
 
+from api.health import router as health_router
 from api.router import api_router
 
 app = FastAPI(
@@ -20,6 +21,13 @@ app = FastAPI(
     description="Public-transit journey planning API for the Karwan-e-Khizr project.",
     version="0.1.0",
 )
+
+# Health/readiness endpoints are mounted directly on the app, unprefixed, so
+# they stay at the conventional infrastructure path `/health` rather than
+# under the versioned `/api` prefix used for feature routes below - this
+# matches how liveness/readiness probes (e.g., container orchestrators) are
+# typically configured to hit a fixed, un-namespaced path.
+app.include_router(health_router)
 
 app.include_router(api_router, prefix="/api")
 

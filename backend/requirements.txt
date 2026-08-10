@@ -8,3 +8,7 @@ alembic>=1.13.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 httpx>=0.27.0
+# Test-only: gives the health endpoint's success-path test a real async
+# DB engine to execute SELECT 1 against, without requiring a live
+# PostgreSQL container. Not used anywhere in application runtime code.
+aiosqlite>=0.20.0
