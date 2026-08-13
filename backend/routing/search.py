@@ -1,5 +1,6 @@
 """
-Shortest-path search over the routing graph ("fastest" objective).
+Shortest-path search over the routing graph - "fastest" and
+"fewest_transfers" objectives.
 
 See README.md §13 and this project's routing plan (§2 "Routing algorithm",
 §5 "Transfers"). This module is plain Python: no `async`, no SQLAlchemy, no
@@ -17,46 +18,44 @@ connecting edges exist only for the duration of a single call - they are
 never added to `graph` itself (see `_build_adjacency`'s docstring for how
 "never mutate the base graph" is achieved).
 
-**Transfer penalty**: applying `TRANSFER_PENALTY_S` correctly requires
-knowing, at the moment a ride edge is considered, which route (if any) was
-most recently ridden - not just "what's the cheapest way to reach this
-stop so far," since the cheapest arrival might force an avoidable
-transfer later while a slightly costlier arrival wouldn't. This is why
-Dijkstra's state here is `(node, last_ride_route_id)`, not just `node` -
-see `find_shortest_path`'s docstring.
+**Objectives, both via one Dijkstra engine**: `find_shortest_path` accepts
+a pluggable `edge_cost_fn` (default `fastest_edge_cost`); `fastest` and
+`fewest_transfers` are two different `edge_cost_fn` implementations, not
+two different search algorithms. Both return a `Cost(transfers, duration_s)`
+- a small frozen, orderable, summable dataclass compared lexicographically
+(`transfers` first, `duration_s` as the tiebreaker; Python dataclasses with
+`order=True` generate exactly this field-order comparison). `fastest`
+always returns `transfers=0` (folding any transfer penalty into
+`duration_s` instead), so its lexicographic comparison degenerates to pure
+duration comparison - reproducing this project's original single-float
+"fastest" behavior exactly. `fewest_transfers` returns `transfers=1` on an
+actual route switch and the edge's own unpenalized `duration_s`, so paths
+are compared by transfer count first and only fall back to duration when
+transfer counts are equal. Both objectives detect "is this a transfer" via
+the same single helper, `_is_transfer`, so their transfer semantics can
+never silently disagree with each other.
 
-**Pluggable objective (for a later step)**: the per-edge cost computation
-is an injectable `edge_cost_fn` parameter (default `_fastest_edge_cost`),
-not inlined into the search loop. A different scalar objective - e.g.
-weighting transfers heavily enough to approximate "fewest transfers" while
-staying within the same scalar-Dijkstra structure used here - can be
-substituted without changing `find_shortest_path` itself. (A true
-lexicographic (transfers, time) objective would need a further change to
-how costs are compared, not just a different `edge_cost_fn` - that's a
-decision for whichever later step actually implements it, not foreclosed
-by anything here.)
+**Transfer penalty**: applying `TRANSFER_PENALTY_S` (now in
+`routing.config`, shared across objectives) correctly requires knowing, at
+the moment a ride edge is considered, which route (if any) was most
+recently ridden - not just "what's the cheapest way to reach this stop so
+far," since the cheapest arrival might force an avoidable transfer later
+while a slightly costlier arrival wouldn't. This is why Dijkstra's state
+here is `(node, last_ride_route_id)`, not just `node` - see
+`find_shortest_path`'s docstring.
 """
 
 from __future__ import annotations
 
 import heapq
 import itertools
-import math
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from routing.config import TRANSFER_PENALTY_S
 from routing.graph import RideEdge, TransitGraph, WalkEdge
 from routing.snapping import DestinationConnection, OriginConnection
-
-# Fixed friction penalty applied when a path switches from one Route to a
-# different Route (same-stop or walk-mediated - see `_fastest_edge_cost`).
-# **New assumption, not yet in README.md** (flagged for confirmation, same
-# treatment as `routing.ride_time.AVERAGE_BUS_SPEED_KMH`): 4 minutes is a
-# reasonable placeholder representing wait/alighting/boarding friction at
-# the new route, not sourced from Karwan-e-Khizr-specific data (none
-# exists yet).
-TRANSFER_PENALTY_S = 240.0
 
 
 class _Origin:
@@ -110,31 +109,82 @@ class _SearchEdge:
     source: SearchEdgeSource
 
 
-EdgeCostFn = Callable[[_SearchEdge, uuid.UUID | None], float]
+@dataclass(frozen=True, order=True)
+class Cost:
+    """A generic, summable, lexicographically-ordered search cost.
 
-
-def _fastest_edge_cost(edge: _SearchEdge, last_ride_route_id: uuid.UUID | None) -> float:
-    """Default ("fastest") per-edge cost: the edge's own duration, plus
-    `TRANSFER_PENALTY_S` if traversing this ride edge means switching away
-    from the route most recently ridden.
-
-    `last_ride_route_id` is `None` only before the very first ride edge is
-    boarded (still walking from/near the true origin) - boarding never
-    incurs a penalty in that case, since there's no prior route being
-    switched away from. It is NOT reset to `None` by walk edges (walking
-    doesn't erase "which route you were just on" - see
-    `find_shortest_path`'s state-transition logic), so a walk-mediated
-    transfer between two different routes' stops still incurs the penalty,
-    same as an immediate same-stop transfer - matching this project's
-    routing plan §5.
+    `@dataclass(order=True)` generates `__lt__`/`__le__`/etc. comparing
+    fields in declaration order - `transfers` first, then `duration_s` as
+    the tiebreaker - which is exactly the lexicographic ordering both
+    objectives need, with no special-casing in `find_shortest_path`
+    itself. `fastest_edge_cost` and `fewest_transfers_edge_cost` differ
+    only in what values they put into each field, not in how costs are
+    compared or combined (`__add__` below) - see this module's docstring.
     """
-    if (
+
+    transfers: int = 0
+    duration_s: float = 0.0
+
+    def __add__(self, other: Cost) -> Cost:
+        return Cost(
+            self.transfers + other.transfers, self.duration_s + other.duration_s
+        )
+
+
+EdgeCostFn = Callable[[_SearchEdge, uuid.UUID | None], Cost]
+
+
+def _is_transfer(edge: _SearchEdge, last_ride_route_id: uuid.UUID | None) -> bool:
+    """True exactly when traversing `edge` means boarding a ride edge for
+    a route DIFFERENT from the one most recently ridden.
+
+    The single source of truth for "what counts as a transfer" - both
+    `fastest_edge_cost` and `fewest_transfers_edge_cost` call this rather
+    than each re-implementing the condition, so the two objectives can
+    never silently disagree about it (this step's explicit requirement).
+
+    - `edge.route_id is None` (a `WalkEdge`/`OriginConnection`/
+      `DestinationConnection`) -> never itself a transfer; only boarding a
+      *ride* edge can be one.
+    - `last_ride_route_id is None` -> this is the very first boarding; not
+      a transfer (there's no prior route being switched away from).
+    - Otherwise: a transfer exactly when the two route ids differ. Walking
+      does not reset `last_ride_route_id` (see `find_shortest_path`), so a
+      walk-mediated transfer between different routes is still detected
+      here, while walking back onto the SAME route is not.
+    """
+    return (
         edge.route_id is not None
         and last_ride_route_id is not None
         and edge.route_id != last_ride_route_id
-    ):
-        return edge.duration_s + TRANSFER_PENALTY_S
-    return edge.duration_s
+    )
+
+
+def fastest_edge_cost(edge: _SearchEdge, last_ride_route_id: uuid.UUID | None) -> Cost:
+    """"fastest" objective (the default): minimize total duration, with
+    `TRANSFER_PENALTY_S` folded directly into `duration_s` on a transfer.
+    Always returns `transfers=0`, so `Cost`'s lexicographic comparison
+    reduces to plain duration comparison - reproducing this project's
+    original "fastest" behavior exactly (see this module's docstring).
+    """
+    duration_s = edge.duration_s
+    if _is_transfer(edge, last_ride_route_id):
+        duration_s += TRANSFER_PENALTY_S
+    return Cost(transfers=0, duration_s=duration_s)
+
+
+def fewest_transfers_edge_cost(
+    edge: _SearchEdge, last_ride_route_id: uuid.UUID | None
+) -> Cost:
+    """"fewest_transfers" objective: minimize `transfer_count` first,
+    using actual (unpenalized) travel/walking duration only as the
+    tiebreaker between paths with an equal transfer count. Unlike
+    `fastest_edge_cost`, `TRANSFER_PENALTY_S` itself is never added here -
+    transfers are penalized by being their own, higher-priority comparison
+    field instead of extra time.
+    """
+    transfers = 1 if _is_transfer(edge, last_ride_route_id) else 0
+    return Cost(transfers=transfers, duration_s=edge.duration_s)
 
 
 @dataclass(frozen=True)
@@ -247,12 +297,17 @@ def find_shortest_path(
     origin_connections: tuple[OriginConnection, ...],
     destination_connections: tuple[DestinationConnection, ...],
     *,
-    edge_cost_fn: EdgeCostFn = _fastest_edge_cost,
+    edge_cost_fn: EdgeCostFn = fastest_edge_cost,
 ) -> SearchResult | None:
     """Find the lowest-cost path from the virtual `ORIGIN` node to the
     virtual `DESTINATION` node, over `graph`'s ride/walk edges plus this
     request's `origin_connections`/`destination_connections` (from
     `routing.snapping`, Step 3).
+
+    `edge_cost_fn` selects the objective: `fastest_edge_cost` (default) or
+    `fewest_transfers_edge_cost` (see this module's docstring) - or any
+    other function matching `EdgeCostFn`'s signature. Both ship with this
+    module rather than requiring a second search implementation.
 
     Returns `None` - not an exception - when no path exists (a
     disconnected graph, or empty `origin_connections`/
@@ -265,17 +320,24 @@ def find_shortest_path(
     `node`, because the cheapest way to *reach* a stop is not necessarily
     part of the cheapest way to reach it *without an avoidable transfer
     later* - a plain `dist[node]` Dijkstra can't express that distinction,
-    so it can't correctly account for `TRANSFER_PENALTY_S`. `None` here
-    always means "no route ridden yet" (still near the true origin); it
-    persists unchanged across walk edges and only changes when a ride edge
-    is actually taken (see `_fastest_edge_cost`).
+    so it can't correctly track transfers for either objective. `None`
+    here always means "no route ridden yet" (still near the true origin);
+    it persists unchanged across walk edges and only changes when a ride
+    edge is actually taken (see `_is_transfer`).
+
+    The winning `SearchResult.total_duration_s` is the winning `Cost`'s
+    `duration_s` component - for `fastest_edge_cost` that already includes
+    any transfer penalty (matching this project's original "fastest"
+    behavior exactly); for `fewest_transfers_edge_cost` it's unpenalized
+    actual travel/walking time, consistent with that objective never
+    adding the penalty in the first place.
     """
     adjacency = _build_adjacency(graph, origin_connections, destination_connections)
 
     State = tuple[SearchNode, uuid.UUID | None]
     start: State = (ORIGIN, None)
 
-    dist: dict[State, float] = {start: 0.0}
+    dist: dict[State, Cost] = {start: Cost()}
     came_from: dict[State, tuple[State, _SearchEdge]] = {}
     visited: set[State] = set()
 
@@ -284,7 +346,7 @@ def find_shortest_path(
     # uuid.UUID and the _Origin/_Destination sentinels - not mutually
     # orderable) when two entries have equal cost.
     counter = itertools.count()
-    frontier: list[tuple[float, int, State]] = [(0.0, next(counter), start)]
+    frontier: list[tuple[Cost, int, State]] = [(Cost(), next(counter), start)]
 
     while frontier:
         cost, _, state = heapq.heappop(frontier)
@@ -295,7 +357,8 @@ def find_shortest_path(
         node, last_ride_route_id = state
         if node is DESTINATION:
             return SearchResult(
-                total_duration_s=cost, edges=_reconstruct_edges(came_from, state)
+                total_duration_s=cost.duration_s,
+                edges=_reconstruct_edges(came_from, state),
             )
 
         for edge in adjacency.get(node, ()):
@@ -307,7 +370,7 @@ def find_shortest_path(
 
             if new_state in visited:
                 continue
-            if new_cost < dist.get(new_state, math.inf):
+            if new_state not in dist or new_cost < dist[new_state]:
                 dist[new_state] = new_cost
                 came_from[new_state] = (state, edge)
                 heapq.heappush(frontier, (new_cost, next(counter), new_state))
