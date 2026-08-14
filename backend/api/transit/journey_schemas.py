@@ -26,7 +26,7 @@ from api.transit.schemas import AgencyRead, Coordinates, RouteListItem, StopRead
 # enum) so an invalid value naturally produces a 422 from Pydantic without
 # any extra validation code, matching how `objective` is validated
 # everywhere else it's used.
-RoutingObjective = Literal["fastest", "fewest_transfers"]
+RoutingObjective = Literal["fastest", "fewest_transfers", "least_walking"]
 
 # Bound for the request's optional `max_walk_m` override. Consistent with
 # `api/transit/router.py`'s `MAX_RADIUS_M` (also 20 km) for the same
@@ -113,11 +113,16 @@ class JourneyRead(BaseModel):
     from `routing.journey.Journey.total_duration_s`, which is the sum of
     actual walk/ride durations only (see that dataclass's own docstring
     for why). The adjustment is applied once, at the API boundary
-    (`api/transit/journeys.py`), specifically so a "fastest" journey's
-    reported duration doesn't quietly exclude the transfer time the
-    optimizer actually weighed when choosing this path - the internal
-    `Journey`'s pure semantics are left alone rather than corrupted to
-    match this API-level presentation choice.
+    (`api/transit/journeys.py`), the same way regardless of which
+    `objective` produced the journey - specifically so a "fastest"
+    journey's reported duration doesn't quietly exclude the transfer time
+    the optimizer actually weighed when choosing this path, and so a
+    `least_walking`/`fewest_transfers` journey's duration is reported on
+    the same passenger-facing basis even though neither of those
+    objectives adds the penalty internally while searching (see
+    `routing.search`) - the internal `Journey`'s pure semantics are left
+    alone rather than corrupted to match this API-level presentation
+    choice.
     """
 
     objective: RoutingObjective

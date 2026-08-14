@@ -52,14 +52,19 @@ from routing.search import (
     fastest_edge_cost,
     fewest_transfers_edge_cost,
     find_shortest_path,
+    least_walking_edge_cost,
 )
 from routing.snapping import DEFAULT_MAX_WALK_M, snap_destination, snap_origin
 
 router = APIRouter(prefix="/transit/journeys", tags=["transit", "journeys"])
 
+# One entry per RoutingObjective (api/transit/journey_schemas.py) - adding
+# a fourth objective later means adding one entry here, not branching
+# logic anywhere else in this module or in routing.search's search loop.
 _EDGE_COST_FN_BY_OBJECTIVE = {
     "fastest": fastest_edge_cost,
     "fewest_transfers": fewest_transfers_edge_cost,
+    "least_walking": least_walking_edge_cost,
 }
 
 

@@ -1,6 +1,6 @@
 """
-Shortest-path search over the routing graph - "fastest" and
-"fewest_transfers" objectives.
+Shortest-path search over the routing graph - "fastest", "fewest_transfers",
+and "least_walking" objectives.
 
 See README.md §13 and this project's routing plan (§2 "Routing algorithm",
 §5 "Transfers"). This module is plain Python: no `async`, no SQLAlchemy, no
@@ -18,22 +18,22 @@ connecting edges exist only for the duration of a single call - they are
 never added to `graph` itself (see `_build_adjacency`'s docstring for how
 "never mutate the base graph" is achieved).
 
-**Objectives, both via one Dijkstra engine**: `find_shortest_path` accepts
-a pluggable `edge_cost_fn` (default `fastest_edge_cost`); `fastest` and
-`fewest_transfers` are two different `edge_cost_fn` implementations, not
-two different search algorithms. Both return a `Cost(transfers, duration_s)`
-- a small frozen, orderable, summable dataclass compared lexicographically
-(`transfers` first, `duration_s` as the tiebreaker; Python dataclasses with
-`order=True` generate exactly this field-order comparison). `fastest`
-always returns `transfers=0` (folding any transfer penalty into
-`duration_s` instead), so its lexicographic comparison degenerates to pure
-duration comparison - reproducing this project's original single-float
-"fastest" behavior exactly. `fewest_transfers` returns `transfers=1` on an
-actual route switch and the edge's own unpenalized `duration_s`, so paths
-are compared by transfer count first and only fall back to duration when
-transfer counts are equal. Both objectives detect "is this a transfer" via
-the same single helper, `_is_transfer`, so their transfer semantics can
-never silently disagree with each other.
+**Three objectives, one Dijkstra engine**: `find_shortest_path` accepts a
+pluggable `edge_cost_fn` (default `fastest_edge_cost`); `fastest_edge_cost`,
+`fewest_transfers_edge_cost`, and `least_walking_edge_cost` are three
+different `edge_cost_fn` implementations, not three different search
+algorithms. All three return a `Cost(transfers, walk_m, duration_s)` - a
+small frozen, orderable, summable dataclass - and each objective only ever
+sets the one or two fields its own priority actually needs, leaving the
+rest at their `0`/`0.0` default; see `Cost`'s own docstring for exactly why
+that makes one shared field-order comparison correct for all three at
+once, with zero per-objective branching in the search loop itself.
+`fastest`/`fewest_transfers`'s behavior is unchanged from Step 6 - see
+`Cost`'s docstring for the precise reasoning. Both `fastest_edge_cost` and
+`fewest_transfers_edge_cost` detect "is this a transfer" via the same
+single helper, `_is_transfer`, so their transfer semantics can never
+silently disagree with each other; `least_walking_edge_cost` doesn't call
+it at all, since it deliberately never touches `transfers`.
 
 **Transfer penalty**: applying `TRANSFER_PENALTY_S` (now in
 `routing.config`, shared across objectives) correctly requires knowing, at
@@ -114,20 +114,43 @@ class Cost:
     """A generic, summable, lexicographically-ordered search cost.
 
     `@dataclass(order=True)` generates `__lt__`/`__le__`/etc. comparing
-    fields in declaration order - `transfers` first, then `duration_s` as
-    the tiebreaker - which is exactly the lexicographic ordering both
-    objectives need, with no special-casing in `find_shortest_path`
-    itself. `fastest_edge_cost` and `fewest_transfers_edge_cost` differ
-    only in what values they put into each field, not in how costs are
-    compared or combined (`__add__` below) - see this module's docstring.
+    fields in DECLARATION order: `transfers`, then `walk_m`, then
+    `duration_s`. All three objectives (`fastest_edge_cost`,
+    `fewest_transfers_edge_cost`, `least_walking_edge_cost`) share this
+    one field order and one comparison - no per-objective branching
+    anywhere in `find_shortest_path` - by each only ever touching the
+    field(s) *its own* priority actually needs and leaving the other
+    field(s) at their default `0`/`0.0` for every edge in that search.
+    Since an untouched field is identically `0` for every state being
+    compared within a given search, it never influences that
+    comparison, so the fixed 3-tuple order transparently reduces to
+    exactly the 1- or 2-field priority each objective actually wants:
+
+    - `fastest_edge_cost`: `transfers` and `walk_m` both always `0` ->
+      comparison reduces to plain `duration_s` (this project's original
+      "fastest" behavior, preserved exactly).
+    - `fewest_transfers_edge_cost`: `walk_m` always `0` -> reduces to
+      `(transfers, duration_s)`, preserved exactly from Step 6.
+    - `least_walking_edge_cost`: `transfers` always `0` -> reduces to
+      `(walk_m, duration_s)` - walking distance first, duration as the
+      tiebreaker, per this step's requirement.
+
+    This is why `walk_m` is declared *between* `transfers` and
+    `duration_s`, not after both: `fewest_transfers` needs `transfers`
+    ahead of `duration_s`, and `least_walking` needs `walk_m` ahead of
+    `duration_s` - both hold simultaneously with this one field order,
+    since each objective's unused field is always the constant `0`.
     """
 
     transfers: int = 0
+    walk_m: float = 0.0
     duration_s: float = 0.0
 
     def __add__(self, other: Cost) -> Cost:
         return Cost(
-            self.transfers + other.transfers, self.duration_s + other.duration_s
+            self.transfers + other.transfers,
+            self.walk_m + other.walk_m,
+            self.duration_s + other.duration_s,
         )
 
 
@@ -185,6 +208,27 @@ def fewest_transfers_edge_cost(
     """
     transfers = 1 if _is_transfer(edge, last_ride_route_id) else 0
     return Cost(transfers=transfers, duration_s=edge.duration_s)
+
+
+def least_walking_edge_cost(
+    edge: _SearchEdge, last_ride_route_id: uuid.UUID | None
+) -> Cost:
+    """"least_walking" objective: minimize total walking distance first,
+    using actual (unpenalized) travel/walking duration only as the
+    tiebreaker between paths with an equal walking distance.
+
+    `edge.source` is a `RideEdge` for a ride edge (no walking distance at
+    all - contributes `0.0`) or a `WalkEdge`/`OriginConnection`/
+    `DestinationConnection` for anything else (each of which carries a
+    real `distance_m`). `transfers` is never incremented here - this
+    objective leaves transfer semantics (and `TRANSFER_PENALTY_S`)
+    completely alone, exactly as `fewest_transfers_edge_cost` leaves
+    walking alone; each objective only ever touches its own dimension
+    (see `Cost`'s docstring for why that's what makes one shared `Cost`
+    type/comparison correct for all three).
+    """
+    walk_m = 0.0 if isinstance(edge.source, RideEdge) else edge.source.distance_m
+    return Cost(transfers=0, walk_m=walk_m, duration_s=edge.duration_s)
 
 
 @dataclass(frozen=True)

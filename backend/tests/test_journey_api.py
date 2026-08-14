@@ -534,3 +534,195 @@ async def test_existing_transit_stops_endpoint_still_works(client, seeded):
     response = await client.get("/api/transit/stops")
     assert response.status_code == 200
     assert len(response.json()) >= 5
+
+
+# ---------------------------------------------------------------------------
+# Step 9: least_walking
+#
+# Uses a separate, isolated network (not `seeded`'s S1/S2/S3) so these
+# tests don't risk perturbing the already-passing fastest/fewest_transfers
+# scenario above. W1/W3 are genuinely ~200m apart (so routing.graph's real
+# PostGIS-driven walking-edge construction creates an actual WalkEdge
+# there, at ~160s per the default 4.5 km/h walking speed - unlike the
+# pure routing.search unit tests, this goes through the real
+# build_graph/StraightLineWalkingProvider pipeline, so a walk edge's
+# duration can't be set arbitrarily, only via real geography). W2 is
+# ~14km from both, so no unwanted walking edges form near it.
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def seeded_least_walking(db_session):
+    """
+    - Route WA: W1 -> W2, engineered 5s ride.
+    - Route WB: W2 -> W3, engineered 5s ride.
+    - Route WD: W1 -> W3 direct, engineered 2000s ride.
+    - A real WalkEdge W1<->W3 (~200m, ~160s) forms automatically.
+
+    fastest/fewest_transfers: walk (160s, 0 transfers) beats both the
+    transfer path (5+5+240 penalty=250s, 1 transfer) and WD (2000s, 0
+    transfers) -> both pick the walk.
+    least_walking: WD and the transfer path both have 0m walking (the
+    walk edge has 200m) - between those two, duration tiebreaks:
+    transfer path's raw 10s beats WD's 2000s -> least_walking picks the
+    TRANSFER PATH, differing from fastest/fewest_transfers.
+    """
+    agency = Agency(name=f"Least Walking Test Agency {uuid.uuid4()}")
+    db_session.add(agency)
+    await db_session.flush()
+
+    route_wa = Route(agency_id=agency.id, short_name="WA")
+    route_wb = Route(agency_id=agency.id, short_name="WB")
+    route_wd = Route(agency_id=agency.id, short_name="WD")
+    db_session.add_all([route_wa, route_wb, route_wd])
+    await db_session.flush()
+
+    w1 = Stop(name="W1", location="SRID=4326;POINT(74.5000 34.0000)")
+    w2 = Stop(name="W2", location="SRID=4326;POINT(74.6000 34.1000)")
+    w3 = Stop(name="W3", location="SRID=4326;POINT(74.5000 34.0018)")
+    db_session.add_all([w1, w2, w3])
+    await db_session.flush()
+
+    # AVERAGE_BUS_SPEED_KMH (routing.ride_time) = 20 km/h = 5.5556 m/s;
+    # distance_along_route_m values below are chosen to produce the ride
+    # times described in this fixture's docstring (5s, 5s, 2000s).
+    speed_m_per_s = 20 * 1000 / 3600
+    short_leg_distance_m = 5 * speed_m_per_s
+    long_leg_distance_m = 2000 * speed_m_per_s
+
+    db_session.add_all(
+        [
+            RouteStop(route_id=route_wa.id, stop_id=w1.id, sequence=1, distance_along_route_m=0),
+            RouteStop(
+                route_id=route_wa.id,
+                stop_id=w2.id,
+                sequence=2,
+                distance_along_route_m=short_leg_distance_m,
+            ),
+            RouteStop(route_id=route_wb.id, stop_id=w2.id, sequence=1, distance_along_route_m=0),
+            RouteStop(
+                route_id=route_wb.id,
+                stop_id=w3.id,
+                sequence=2,
+                distance_along_route_m=short_leg_distance_m,
+            ),
+            RouteStop(route_id=route_wd.id, stop_id=w1.id, sequence=1, distance_along_route_m=0),
+            RouteStop(
+                route_id=route_wd.id,
+                stop_id=w3.id,
+                sequence=2,
+                distance_along_route_m=long_leg_distance_m,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    return {"agency": agency, "w1": w1, "w2": w2, "w3": w3}
+
+
+@pytest_asyncio.fixture
+async def client_least_walking(db_session, seeded_least_walking):
+    """Same wiring pattern as `client`, but built ONLY from
+    `seeded_least_walking`'s isolated network - not `seeded`'s - so this
+    scenario's graph contains exactly the intended stops/routes."""
+    graph = await build_graph(db_session)
+
+    async def override_get_session():
+        yield db_session
+
+    def override_get_transit_graph():
+        return graph
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_transit_graph] = override_get_transit_graph
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+        app.dependency_overrides.pop(get_transit_graph, None)
+
+
+def _least_walking_body(objective="least_walking"):
+    return {
+        "origin": {"latitude": 34.0000, "longitude": 74.5000},
+        "destination": {"latitude": 34.0018, "longitude": 74.5000},
+        "objective": objective,
+        "max_walk_m": 250.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_least_walking_works_through_the_real_api_endpoint(
+    client_least_walking, seeded_least_walking
+):
+    response = await client_least_walking.post(
+        "/api/transit/journeys/search", json=_least_walking_body("least_walking")
+    )
+    assert response.status_code == 200
+    journey = response.json()["journeys"][0]
+    assert journey["objective"] == "least_walking"
+
+    ride_legs = [leg for leg in journey["legs"] if leg["type"] == "ride"]
+    assert {leg["route"]["short_name"] for leg in ride_legs} == {"WA", "WB"}
+    # No WalkLeg with two real stops (i.e. no transfer-walk or direct
+    # walk between stops) - only the (zero-distance-here) origin/
+    # destination access legs, since the chosen path is ride-only between
+    # W1 and W3.
+    walk_legs = [leg for leg in journey["legs"] if leg["type"] == "walk"]
+    assert all(
+        leg["from_stop"] is None or leg["to_stop"] is None for leg in walk_legs
+    )
+
+
+@pytest.mark.asyncio
+async def test_least_walking_and_fastest_choose_different_journeys_via_api(
+    client_least_walking, seeded_least_walking
+):
+    least_walking_response = await client_least_walking.post(
+        "/api/transit/journeys/search", json=_least_walking_body("least_walking")
+    )
+    fastest_response = await client_least_walking.post(
+        "/api/transit/journeys/search", json=_least_walking_body("fastest")
+    )
+
+    least_walking_routes = {
+        leg["route"]["short_name"]
+        for leg in least_walking_response.json()["journeys"][0]["legs"]
+        if leg["type"] == "ride"
+    }
+    fastest_routes = {
+        leg["route"]["short_name"]
+        for leg in fastest_response.json()["journeys"][0]["legs"]
+        if leg["type"] == "ride"
+    }
+
+    assert least_walking_routes == {"WA", "WB"}
+    assert fastest_routes == set()  # fastest picks the direct walk, no ride at all
+    assert least_walking_routes != fastest_routes
+
+
+@pytest.mark.asyncio
+async def test_least_walking_journey_reports_correct_total_walk_m(
+    client_least_walking, seeded_least_walking
+):
+    response = await client_least_walking.post(
+        "/api/transit/journeys/search", json=_least_walking_body("least_walking")
+    )
+    journey = response.json()["journeys"][0]
+    # Origin/destination access legs here are both ~0m (query point is
+    # exactly at W1/W3), and the chosen WA+WB path has no WalkEdge at all.
+    assert journey["total_walk_m"] == pytest.approx(0.0, abs=1.0)
+
+
+@pytest.mark.asyncio
+async def test_invalid_objective_still_returns_422_alongside_least_walking(
+    client_least_walking, seeded_least_walking
+):
+    """Re-confirms 422 handling wasn't disturbed by adding the third
+    objective - e.g. a typo'd objective name must still be rejected."""
+    response = await client_least_walking.post(
+        "/api/transit/journeys/search", json=_least_walking_body("least_walkng")
+    )
+    assert response.status_code == 422
