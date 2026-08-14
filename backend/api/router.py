@@ -8,8 +8,10 @@ keeping `main.py` decoupled from the growing set of feature routers.
 
 from fastapi import APIRouter
 
+from api.transit.journeys import router as journeys_router
 from api.transit.router import router as transit_router
 
 api_router = APIRouter()
 
 api_router.include_router(transit_router)
+api_router.include_router(journeys_router)
