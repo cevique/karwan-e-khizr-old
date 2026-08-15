@@ -155,7 +155,7 @@ async def test_full_stack_smoke(client, admin_and_validator_tokens):
     }
 
     # --- 1. register a passenger (auth) -------------------------------
-    email = f"passenger-{uuid.uuid4()}@example.test"
+    email = f"passenger-{uuid.uuid4()}@example.com"
     register_resp = await client.post(
         "/api/auth/register",
         json={"name": "Integration Test Passenger", "email": email, "password": "a-strong-password"},
@@ -175,8 +175,22 @@ async def test_full_stack_smoke(client, admin_and_validator_tokens):
     # --- 2/3. seed + rebuild the graph (admin, committed - see module
     # docstring for why this step alone needs real commits rather than
     # the rolled-back savepoint the rest of this test uses) ------------
+    #
+    # The admin/seed HTTP endpoint goes through the overridden session
+    # (rolled-back savepoint), so `build_and_store_graph`'s own separate
+    # connection (via AsyncSessionLocal) cannot see the uncommitted data.
+    # Seed via a genuinely committed session instead, matching the
+    # pattern test_admin_router.py's `committed_seed` fixture uses.
+    from db.session import AsyncSessionLocal
+    from seeding.seed import seed_database, clear_seed_data
+
+    async with AsyncSessionLocal() as seed_sess:
+        await seed_database(seed_sess, mode="insert")
+
     seed_engine = create_async_engine(settings.DATABASE_URL)
     try:
+        # Verify the seed endpoint is reachable (data already seeded
+        # above; the endpoint is idempotent and will skip existing rows).
         seed_resp = await client.post("/api/admin/seed", headers=admin_headers)
         assert seed_resp.status_code == 200, seed_resp.text
 
@@ -273,10 +287,10 @@ async def test_full_stack_smoke(client, admin_and_validator_tokens):
         assert isinstance(realtime_resp.json(), list)
 
     finally:
-        # Clean up the committed admin-seeded data (graph rebuild reads
-        # through its own separate connection outside this test's rolled-
-        # back SAVEPOINT, so nothing above is rolled back automatically -
-        # same tradeoff test_admin_router.py documents and handles).
-        reset_resp = await client.post("/api/admin/seed/reset", headers=admin_headers)
-        assert reset_resp.status_code == 200, reset_resp.text
+        # Clean up the committed admin-seeded data (seeded via
+        # AsyncSessionLocal above, outside this test's rolled-back
+        # SAVEPOINT - same tradeoff test_admin_router.py documents
+        # and handles).
+        async with AsyncSessionLocal() as cleanup_sess:
+            await clear_seed_data(cleanup_sess)
         await seed_engine.dispose()
