@@ -20,3 +20,11 @@ aiosqlite>=0.20.0
 bcrypt>=4.1.0
 PyJWT>=2.7.0
 email-validator>=2.1.0
+
+# Required by api/admin/router.py's POST /admin/import/csv, which accepts
+# multipart/form-data file uploads (UploadFile/File) - FastAPI's Form/File
+# support has this as a runtime-only dependency it does not itself pin.
+# Missing from Claude C's own requirements.txt (C did not modify this
+# file at all); added at integration time after `import main` failed with
+# "Form data requires python-multipart to be installed".
+python-multipart>=0.0.9
