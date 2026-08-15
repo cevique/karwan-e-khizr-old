@@ -1,0 +1,1 @@
+"""Fares API router."""

@@ -67,16 +67,16 @@ def test_models_import_successfully():
 
 def test_metadata_contains_expected_tables():
     """`db.models` registers every table implemented so far on
-    `Base.metadata`: the foundational static-network tables plus the
-    realtime/simulation tables (Vehicle/Trip/StopTime/VehiclePosition).
+    `Base.metadata`: the foundational static-network tables, the
+    realtime/simulation tables (Vehicle/Trip/StopTime/VehiclePosition),
+    and the users/fares/ticketing tables (User/FareRule/Ticket).
 
     This is intentionally an evolving invariant, not a frozen snapshot:
-    as later workstreams add their own models to `db/models/__init__.py`
-    (users/fares/tickets, ...), this set grows with them. What it
-    guards against is a model being *silently* left off
-    `db/models/__init__.py` (and therefore invisible to Alembic
-    autogenerate / relationship resolution) - not against the set ever
-    changing.
+    as later workstreams add their own models to `db/models/__init__.py`,
+    this set grows with them. What it guards against is a model being
+    *silently* left off `db/models/__init__.py` (and therefore invisible
+    to Alembic autogenerate / relationship resolution) - not against the
+    set ever changing.
     """
     assert set(Base.metadata.tables) == {
         "agencies",
@@ -87,6 +87,9 @@ def test_metadata_contains_expected_tables():
         "trips",
         "stop_times",
         "vehicle_positions",
+        "users",
+        "fare_rules",
+        "tickets",
     }
 
 
