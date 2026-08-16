@@ -62,7 +62,14 @@ class RouteListItem(BaseModel):
 
 
 class StopRead(BaseModel):
-    """Public representation of a Stop, including its coordinates.
+    """Public representation of a Stop.
+
+    `location` is `None` for stops whose coordinates aren't known yet
+    (`Stop.location` is nullable - Phase 1 imports ~105 unlocated stops
+    from `docs/transit_data.json`, per `docs/DATA_GAPS.md`). This is a
+    deliberate, frontend-visible signal: such a stop can be listed and
+    named, but cannot be placed on a map until the geospatial-enrichment
+    pass fills it in.
 
     `distance_m` is only populated when this Stop came from the
     nearby-stops query (`GET /transit/stops?latitude=...`); it's `None` for
@@ -72,7 +79,7 @@ class StopRead(BaseModel):
 
     id: uuid.UUID
     name: str
-    location: Coordinates
+    location: Coordinates | None
     distance_m: float | None = None
 
 

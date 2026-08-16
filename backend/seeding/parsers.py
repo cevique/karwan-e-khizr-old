@@ -13,6 +13,16 @@ Both formats describe the same four tables (`agencies`, `stops`, `routes`,
 field names) - JSON as one nested-ish document with four top-level arrays,
 CSV as four separate files/strings with a header row each.
 
+JSON input may additionally carry an optional `trip_patterns` array - the
+canonical stop-time pattern shape from `plan.md` section B (one direction
+of one route plus the headway metadata to expand it into a full day's
+`Trip` rows). Each entry's `stop_times` sub-array becomes the
+`ImportDataset.trip_stop_times` entry keyed by `(route_ref, direction)`.
+This is additive: a document with no `trip_patterns` parses exactly as
+before, and the dedicated `transit_data_importer` (the canonical
+`transit_data.json` -> `ImportDataset` converter) builds the same
+`ImportDataset` shape without going through this generic parser.
+
 Parse errors here are strictly about *shape* (invalid JSON syntax, a
 missing required column/key, a value that can't be coerced to the
 expected type) - raised as `ImportParseError`. Business-level problems
@@ -35,6 +45,8 @@ from seeding.import_schema import (
     ImportRoute,
     ImportRouteStop,
     ImportStop,
+    ImportStopTime,
+    ImportTripPattern,
 )
 
 
@@ -93,6 +105,80 @@ def _require_int(record: dict, key: str, *, where: str) -> int:
         ) from exc
 
 
+def _parse_trip_patterns(trip_patterns: list[dict]) -> tuple:
+    """Parse the optional `trip_patterns` array into
+    `(tuple[ImportTripPattern], dict[(route_ref, direction), tuple[ImportStopTime]])`.
+    Each entry:
+
+        {
+          "route_ref": "fr_04",
+          "direction": "forward",
+          "headway_minutes": 10,
+          "total_trips_per_day": 97,
+          "first_trip_start": "06:00:00",
+          "last_trip_start": "22:00:00",
+          "source_pdf": "https://...",
+          "confidence": "OFFICIAL",
+          "stop_times": [
+            {"stop_ref": "cda_pims_hospital", "sequence": 1,
+             "arrival_offset_s": 0, "departure_offset_s": 0},
+            ...
+          ]
+        }
+    """
+    patterns: list[ImportTripPattern] = []
+    stop_times_by_pattern: dict[tuple[str, str], tuple[ImportStopTime, ...]] = {}
+
+    for i, pattern in enumerate(trip_patterns):
+        where = f"trip_patterns[{i}]"
+        if not isinstance(pattern, dict):
+            raise ImportParseError(f"{where} must be an object.")
+        route_ref = _require_str(pattern, "route_ref", where=where)
+        direction = _require_str(pattern, "direction", where=where)
+        headway = _require_float(pattern, "headway_minutes", where=where)
+        total = _require_int(pattern, "total_trips_per_day", where=where)
+        first = _require_str(pattern, "first_trip_start", where=where)
+        last = _optional_str(pattern, "last_trip_start")
+        source_pdf = _optional_str(pattern, "source_pdf")
+        confidence = _optional_str(pattern, "confidence") or "UNKNOWN"
+
+        patterns.append(
+            ImportTripPattern(
+                route_ref=route_ref,
+                direction=direction,
+                headway_minutes=headway,
+                total_trips_per_day=total,
+                first_trip_start=first,
+                last_trip_start=last,
+                source_pdf=source_pdf,
+                confidence=confidence,
+            )
+        )
+
+        stop_times_raw = pattern.get("stop_times", [])
+        if not isinstance(stop_times_raw, list):
+            raise ImportParseError(
+                f"{where}: field 'stop_times' must be a list, got "
+                f"{type(stop_times_raw).__name__}."
+            )
+        stop_times = tuple(
+            ImportStopTime(
+                stop_ref=_require_str(st, "stop_ref", where=f"{where}.stop_times[{j}]"),
+                sequence=_require_int(st, "sequence", where=f"{where}.stop_times[{j}]"),
+                arrival_offset_s=_require_int(
+                    st, "arrival_offset_s", where=f"{where}.stop_times[{j}]"
+                ),
+                departure_offset_s=_require_int(
+                    st, "departure_offset_s", where=f"{where}.stop_times[{j}]"
+                ),
+            )
+            for j, st in enumerate(stop_times_raw)
+        )
+        stop_times_by_pattern[(route_ref, direction)] = stop_times
+
+    return tuple(patterns), stop_times_by_pattern
+
+
 def _optional_float(record: dict, key: str) -> float | None:
     value = record.get(key)
     if value is None or value == "":
@@ -110,6 +196,7 @@ def _records_to_dataset(
     stops: list[dict],
     routes: list[dict],
     route_stops: list[dict],
+    trip_patterns: list[dict] | None = None,
 ) -> ImportDataset:
     """Shared normalization step for both JSON and CSV input, once each
     has reduced its own format down to plain lists of dicts."""
@@ -148,11 +235,16 @@ def _records_to_dataset(
         )
         for i, rs in enumerate(route_stops)
     )
+    parsed_trip_patterns, parsed_stop_times = _parse_trip_patterns(
+        trip_patterns or []
+    )
     return ImportDataset(
         agencies=parsed_agencies,
         stops=parsed_stops,
         routes=parsed_routes,
         route_stops=parsed_route_stops,
+        trip_patterns=parsed_trip_patterns,
+        trip_stop_times=parsed_stop_times,
     )
 
 
@@ -166,7 +258,14 @@ def parse_json_dataset(document: dict) -> ImportDataset:
           "routes": [{"ref": "...", "agency": "...", "short_name": "...",
                        "long_name": "...", "color": "#RRGGBB"}],
           "route_stops": [{"route_ref": "...", "stop_ref": "...",
-                             "sequence": 1, "distance_along_route_m": ..}]
+                             "sequence": 1, "distance_along_route_m": ..}],
+          "trip_patterns": [{"route_ref": "...", "direction": "...",
+                             "headway_minutes": .., "total_trips_per_day": ..,
+                             "first_trip_start": "HH:MM:SS",
+                             "last_trip_start": "HH:MM:SS",
+                             "stop_times": [{"stop_ref": "...", "sequence": 1,
+                                             "arrival_offset_s": 0,
+                                             "departure_offset_s": 0}]}]
         }
 
     Every top-level key is optional (defaults to an empty list) - a
@@ -179,7 +278,7 @@ def parse_json_dataset(document: dict) -> ImportDataset:
         raise ImportParseError(
             f"Top-level JSON document must be an object, got {type(document).__name__}."
         )
-    for key in ("agencies", "stops", "routes", "route_stops"):
+    for key in ("agencies", "stops", "routes", "route_stops", "trip_patterns"):
         if key in document and not isinstance(document[key], list):
             raise ImportParseError(
                 f"{key!r} must be a list, got {type(document[key]).__name__}."
@@ -189,6 +288,7 @@ def parse_json_dataset(document: dict) -> ImportDataset:
         stops=document.get("stops", []),
         routes=document.get("routes", []),
         route_stops=document.get("route_stops", []),
+        trip_patterns=document.get("trip_patterns", []),
     )
 
 

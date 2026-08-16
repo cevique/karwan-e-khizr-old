@@ -4,6 +4,156 @@
 
 ---
 
+# SESSION HANDOFF — Phase 1 COMPLETE (2026-08-17, agent handoff)
+
+## Status: Phase 1 (Transit Data Import) is COMPLETE, verified, and committed.
+
+**Test baseline: 431 passed (406 original + 25 new Phase 1 tests), 0 failures.**
+
+## What Is Done (Phase 1, all committed)
+
+### New files
+- `seeding/transit_data_importer.py` — dedicated converter from the canonical
+  `docs/transit_data.json` shape (uuid `id`s + human `key`s, `operators`,
+  `trips` with embedded `stop_times`, top-level `route_stops` that only cover
+  red_line) to the generic `ImportDataset`. Direction normalized
+  `Forward`/`Backward` → `forward`/`backward`. FR-14's null
+  `departure_offset_s` → `departure = arrival`. FR routes get RouteStop rows
+  DERIVED from `trips[].stop_times` (sequence = index+1, distance None) since
+  their only ordered stop sequence lives there; red_line stops come from the
+  top-level array (23 rows). Result: 2 agencies, 122 stops, 26 routes,
+  115 route_stops, 4 trip patterns.
+- `scripts/import_transit_data.py` — CLI: `--dataset` (default
+  `docs/transit_data.json`), `--service-date` (default today), `--dry-run`.
+  Uses `allow_routes_without_stops=True`.
+- `alembic/versions/a1b2c3d4e5f6_make_stops_location_nullable.py` — makes
+  `stops.location` nullable (plan.md section B: ~105 of 122 stops have null
+  coords in the canonical dataset).
+- `alembic/versions/b2c3d4e5f6a7_add_stops_ref.py` — adds nullable
+  `stops.ref` (see the data-integrity bug below).
+- `tests/test_transit_data_import.py` — 25 tests: converter mapping, trip
+  pattern generation, validation, full DB import (row counts), null vs
+  non-null coords, FR-01 offsets, idempotency, deterministic IDs,
+  service-date separation, graph skipping unlocated stops, simulator guards.
+
+### Modified files
+- `seeding/import_schema.py` — `ImportDataset` extended with `trip_patterns`
+  + `trip_stop_times` + `stop_times_for(route_ref, direction)` helper;
+  `ImportTripPattern`/`ImportStopTime` dataclasses; `ImportStop` lat/lon now
+  `float | None = None`.
+- `seeding/parsers.py` — optional generic JSON `trip_patterns` parsing
+  (additive; the generic parser still REQUIRES lat/lon for stops — only the
+  canonical converter builds null-coord stops directly).
+- `seeding/validation.py` — `validate_dataset(dataset, *,
+  allow_routes_without_stops=False)` downgrades `insufficient_stops` errors
+  to warnings; full trip-pattern validation (refs, direction, headway, count,
+  times, stop-time offsets, `trip_count_exceeds_last_trip_start` warning).
+- `seeding/importer.py` — `import_dataset(..., allow_routes_without_stops=
+  False, service_date=None)`; `generate_trip_starts` (exactly
+  `total_trips_per_day`, NOT capped by `last_trip_start`); deterministic
+  uuid5 trip/stop_time IDs; replace-semantics re-import; null-coord stops.
+- `db/models/stop.py` — `location` nullable + new `ref` column.
+- `routing/graph.py` — `_fetch_nodes` filters `Stop.location.is_not(None)`;
+  `_fetch_ride_edges` skips pairs whose stops aren't graph nodes.
+- `simulation/trip_builder.py` — `load_trip_schedule` returns None if any
+  stop lacks coords; `build_trip_for_route` raises ValueError.
+- `api/transit/schemas.py` / `api/transit/router.py` — `StopRead.location` is
+  `Coordinates | None`; `_stop_read` returns null location for unlocated
+  stops.
+- `tests/test_transit_models.py` — the one pre-existing test that asserted
+  `stops.c.location` NOT nullable was updated to assert nullable (with a
+  justification docstring).
+
+## Problems Found & Solved This Session
+
+1. **DATA-INTEGRITY BUG (major): stop name collision.** `docs/transit_data.json`
+   contains FOUR pairs of DISTINCT stops that share a display `name`:
+   `faizabad`(Red Line, has coords)/`cda_faizabad`(CDA feeder, null coords),
+   `bari_imam`/`cda_bari_imam`, `g9_markaz`/`cda_g_9_markaz`,
+   `g10_markaz`/`cda_g_10_markaz`. The importer's name-based get-or-create
+   collapsed each pair into ONE row (118 stops instead of 122), which would
+   corrupt the routing graph (both routes sharing a stop node) AND make
+   re-import crash with `MultipleResultsFound`. FIX: added nullable `stops.ref`
+   column holding the dataset's stable `key`; `_get_or_create_stop` now
+   matches by `ref` first, falling back to `name` only for ref-less
+   (legacy/admin) data. Now: 122 stops imported, idempotent re-import works
+   (275 replaced / 0 new on second run).
+2. **Timezone round-trip bug in deterministic trip IDs.** `trip_id_for` used
+   `start.isoformat()` on the PKT-aware insert value; Postgres stores
+   TIMESTAMPTZ and asyncpg returns UTC, so the read-back value produced a
+   DIFFERENT UUID than the one used at insert time (idempotency and
+   determinism broken). FIX: `trip_id_for` normalizes via
+   `start.astimezone(PKT)` before hashing. Tests assert on
+   `scheduled_start_time.astimezone(PKT)` wall-clock.
+3. **Wrong canonical offsets in my first test draft.** I hard-coded plan.md's
+   example offsets (130/150) but the real FR-01 dataset is 168/188 — fixed to
+   match the canonical data (plan.md's §E example is illustrative, not exact).
+4. **Operational gotcha (IMPORTANT for the next agent):** pytest runs against
+   the LIVE docker Postgres (rolled-back transactions) and assumes an EMPTY
+   baseline (e.g. `test_validate_endpoint_reports_errors_without_persisting`
+   expects `stops_total == 0`). If you run `scripts/import_transit_data.py`
+   (which COMMITS), you MUST delete rows from
+   `stop_times → trips → route_stops → routes → stops → agencies` (in that
+   order, or cascade) before running pytest, or ~10 tests fail.
+
+## Verified End-to-End
+`python scripts/import_transit_data.py --service-date 2026-08-16`:
+- agencies 2, stops 122, routes 26, route_stops 115, trips 275, stop_times 6242
+- second run: trips replaced=275, created=0 (idempotent), static 0 created
+- graph builds: 17 nodes (located stops only), 6 ride_edges, 2 walk_edges
+- DB was cleaned back to empty baseline after verification.
+
+## What Remains
+
+### Next move (Phase 2 — Geospatial Enrichment), see §C / §M-Phase 2
+1. `db/models/stop.py` — add `coordinate_source`, `coordinate_confidence`
+   columns; migration `xxxx_add_stop_coordinate_provenance.py`.
+2. `seeding/geocoding.py` — Nominatim geocoding service (httpx, already in
+   requirements). Bounding box 33.5–33.85N, 73.0–73.3E. Max 1 req/sec.
+   Only fill NULL coords; never overwrite APPROXIMATE seed coords.
+3. `scripts/geocode_stops.py` — CLI (network access required; ~105 stops).
+4. `tests/test_geocoding.py` (mocked Nominatim).
+5. Update `docs/DATA_GAPS.md`/`SOURCES.md` with enrichment results.
+
+### Later phases (see §M)
+- **Phase 3** Route geometry via OSRM → `Route.path` + `geometry_source`/
+  `geometry_confidence` columns; `GET /api/transit/routes/{id}/geometry`.
+- **Phase 4** Enhanced realtime API (bearing, stop names, ETA, delay);
+  `GET /api/transit/realtime/vehicles/{id}/eta`.
+- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint.
+- **Phase 6** Frontend contract finalization (route geometry in journey legs,
+  CORS, documented response shapes).
+
+### Known open items / thinking
+- `Stop` model still has NO uniqueness constraint on `ref` (deliberate: seed
+  rows predate it). If Phase 2 wants to enforce uniqueness, add a partial
+  unique index WHERE ref IS NOT NULL — but only if a bug demands it.
+- RouteStop `distance_along_route_m` still NULL everywhere (Phase 3 fills it).
+- `Route.path` still NULL everywhere (Phase 3 fills it).
+- Generic parser still requires stop lat/lon — by design (existing tests
+  depend on `test_parse_json_dataset_rejects_missing_required_field`).
+- The 21 routes with no stop sequence at all import fine via
+  `allow_routes_without_stops=True` (warning, not error). If we later get
+  stop sequences for them, just add to transit_data.json and re-import.
+- FR-01's documented 16th trip starts 22:15 but `last_trip_start` says 22:00.
+  We generate the documented 16 trips and surface the mismatch as a
+  validation warning (`trip_count_exceeds_last_trip_start`). Do NOT silently
+  drop the trip.
+
+## Active Todo List (for next agent)
+- [x] Phase 1 import pipeline (schema/parser/validation/importer) + scripts
+- [x] Phase 1 migration(s): stops.location nullable, stops.ref
+- [x] Phase 1 test file `tests/test_transit_data_import.py` (25 tests)
+- [x] Full suite green: 431 passed / 0 failed
+- [ ] Phase 2: geocoding service + script + provenance columns + tests
+- [ ] Phase 3: OSRM route geometry + provenance + geometry API + tests
+- [ ] Phase 4: enhanced realtime API (bearing/ETA/delay) + tests
+- [ ] Phase 5: admin daily-trip generation endpoint + tests
+- [ ] Phase 6: frontend API contract finalization + tests
+- [ ] Remember: clean transit tables before pytest after running import script
+
+---
+
 ## A. Current Architecture Assessment
 
 ### What Already Exists and Can Be Reused (Everything)

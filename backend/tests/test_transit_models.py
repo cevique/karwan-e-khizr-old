@@ -141,7 +141,13 @@ def test_route_stop_sequence_is_explicit_and_unique_per_route():
 def test_stop_location_and_route_path_are_spatial_types():
     """Coordinates are PostGIS types, not plain lat/lon strings/floats -
     Stop.location as `geography` (used for proximity search), Route.path
-    as `geometry` (used for rendering/measurement)."""
+    as `geometry` (used for rendering/measurement).
+
+    `Stop.location` is nullable (Phase 1 imports ~105 stops from
+    `docs/transit_data.json` that have no coordinates yet - see
+    `docs/DATA_GAPS.md`; per `plan.md` section B such stops "remain null
+    in the DB until geospatial enrichment fills them", so the column must
+    allow NULL rather than requiring a fabricated coordinate)."""
     from geoalchemy2 import Geography, Geometry
 
     stops = Base.metadata.tables["stops"]
@@ -150,7 +156,7 @@ def test_stop_location_and_route_path_are_spatial_types():
     assert isinstance(stops.c.location.type, Geography)
     assert stops.c.location.type.geometry_type == "POINT"
     assert stops.c.location.type.srid == 4326
-    assert not stops.c.location.nullable
+    assert stops.c.location.nullable
 
     assert isinstance(routes.c.path.type, Geometry)
     assert routes.c.path.type.geometry_type == "LINESTRING"

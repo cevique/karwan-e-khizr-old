@@ -85,6 +85,12 @@ async def build_trip_for_route(
         raise ValueError(
             f"Route {route_id} has no stops; cannot build a simulated trip"
         )
+    if any(latitude is None or longitude is None for _, longitude, latitude in rows):
+        raise ValueError(
+            f"Route {route_id} has a stop without coordinates; cannot build "
+            "a simulated trip until its stops are located (see "
+            "docs/DATA_GAPS.md)."
+        )
 
     timing_inputs = [
         StopTimingInput(
@@ -130,10 +136,13 @@ async def load_trip_schedule(
     """Load `trip_id`'s `StopTime`s (with each stop's coordinates) into a
     pure `TripSchedule`, ready for `simulation.engine.compute_position_at`.
 
-    Returns `None` if the trip doesn't exist or has no `StopTime`s (e.g.
+    Returns `None` if the trip doesn't exist, has no `StopTime`s (e.g.
     a `Trip` row was created directly, bypassing `build_trip_for_route`,
-    and never given a schedule) - callers treat this the same as "no
-    position available" rather than raising.
+    and never given a schedule), or if any stop in the schedule lacks
+    coordinates (Stop.location is nullable - Phase 1 imports ~105
+    unlocated stops from the canonical dataset; a schedule that can't be
+    positioned is useless to the engine, so callers treat this the same
+    as "no position available" rather than raising.
     """
     trip = await session.get(Trip, trip_id)
     if trip is None:
@@ -160,5 +169,7 @@ async def load_trip_schedule(
         )
         for stop_time, longitude, latitude in rows
     )
+    if any(stop.latitude is None or stop.longitude is None for stop in stops):
+        return None
 
     return TripSchedule(trip_id=trip.id, route_id=trip.route_id, stops=stops)

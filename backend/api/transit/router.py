@@ -69,14 +69,17 @@ def _latitude_expr():
 
 def _stop_read(
     stop: Stop,
-    longitude: float,
-    latitude: float,
+    longitude: float | None,
+    latitude: float | None,
     distance_m: float | None = None,
 ) -> StopRead:
+    location = None
+    if longitude is not None and latitude is not None:
+        location = Coordinates(latitude=latitude, longitude=longitude)
     return StopRead(
         id=stop.id,
         name=stop.name,
-        location=Coordinates(latitude=latitude, longitude=longitude),
+        location=location,
         distance_m=distance_m,
     )
 

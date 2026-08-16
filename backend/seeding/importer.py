@@ -16,17 +16,21 @@ with no formal external ID scheme like GTFS's `stop_id`):
   imported (or that's already in the seed dataset) reuses that same row.
 - Route: matched by `(agency_id, short_name)` (the existing DB
   `UNIQUE` constraint - see `db/models/route.py`).
-- Stop: matched by exact `name` - there is NO database-level uniqueness
-  on `Stop.name` (see that model's docstring: intentionally not modeled
-  yet), so this is an application-level heuristic, not an enforced
-  guarantee. Documented limitation (see `backend/data/README.md`):
-  renaming a stop between imports, or two different sources describing
-  the same physical stop under slightly different names, creates a
-  second `Stop` row rather than updating the first. Good enough for the
-  CSV/JSON MVP this task calls for; a real GTFS-style `stop_id` (or a
-  geographic near-match) would remove this limitation but is explicitly
-  out of scope ("do not build a complete GTFS ecosystem unless the
-  repository actually requires it").
+- Stop: matched by `ref` (the canonical dataset's stable key, persisted
+  on `Stop.ref`) when a ref is present, falling back to exact `name`
+  matching for legacy/admin imports that carry no ref. The ref-first
+  ordering matters: `docs/transit_data.json` contains distinct stops
+  that share a display name (e.g. Red Line `faizabad` vs CDA feeder
+  `cda_faizabad`, both "Faizabad"), which name-only matching would
+  wrongly collapse into one row. Documented limitation (see
+  `backend/data/README.md`): for ref-less data, renaming a stop between
+  imports, or two different sources describing the same physical stop
+  under slightly different names, creates a second `Stop` row rather
+  than updating the first. Good enough for the CSV/JSON MVP this task
+  calls for; a real GTFS-style `stop_id` (or a geographic near-match)
+  would remove this limitation but is explicitly out of scope ("do not
+  build a complete GTFS ecosystem unless the repository actually
+  requires it").
 - RouteStop: matched by `(route_id, sequence)` (the existing DB
   `UNIQUE` constraint - see `db/models/route_stop.py`).
 
@@ -42,14 +46,70 @@ applied dataset behind.
 from __future__ import annotations
 
 import dataclasses
+import uuid
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import cast, select
 from sqlalchemy import func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Agency, Route, RouteStop, Stop
-from seeding.import_schema import ImportDataset
+from db.models import Agency, Route, RouteStop, Stop, StopTime, Trip
+from seeding.import_schema import ImportDataset, ImportTripPattern
 from seeding.validation import ValidationIssue, ValidationResult, validate_dataset
+
+# Trip/StopTime IDs are derived (not random) so a re-import of the same
+# pattern + start time deterministically lands on the same rows and can
+# replace them in place. This keeps the "idempotent re-import" guarantee
+# the plan calls for without ever fabricating data.
+_IMPORT_NS = uuid.UUID("9c1f9e26-2c3d-4f0a-9e9b-1c2d3e4f5a6b")
+
+# Pakistan Standard Time (UTC+5) - the tz for `scheduled_start_time`, the
+# project's timezone-aware convention (see `db/models/trip.py`).
+PKT = timezone(timedelta(hours=5))
+
+
+def trip_id_for(route_id: uuid.UUID, direction: str, start: datetime) -> uuid.UUID:
+    # `start` may be either the PKT-aware value used at insert time or the
+    # equivalent instant read back from Postgres (asyncpg returns
+    # TIMESTAMPTZ as UTC) - normalize to PKT so both produce the same ID.
+    start_pkt = start.astimezone(PKT)
+    return uuid.uuid5(_IMPORT_NS, f"trip:{route_id}:{direction}:{start_pkt.isoformat()}")
+
+
+def stop_time_id_for(trip_id: uuid.UUID, sequence: int) -> uuid.UUID:
+    return uuid.uuid5(_IMPORT_NS, f"stoptime:{trip_id}:{sequence}")
+
+
+def generate_trip_starts(pattern: ImportTripPattern, service_date: date) -> list[datetime]:
+    """Expand one `ImportTripPattern` into the concrete `scheduled_start_time`
+    datetimes for a full service day: exactly `total_trips_per_day` trips at
+    `headway_minutes` intervals starting at `first_trip_start`, i.e.
+    `start_n = first_trip_start + n * headway_minutes` for n = 0..N-1 (the
+    documented CDA trip counts in `docs/TRANSIT_RESEARCH.md` are
+    authoritative). `last_trip_start` is NOT used to truncate the count -
+    it is a documented value from the same PDF, and for FR-01 it is 15
+    minutes earlier than the arithmetic 16th trip (22:15 vs 22:00); that
+    discrepancy is surfaced as a `trip_count_exceeds_last_trip_start`
+    validation warning rather than silently dropping a documented trip.
+    """
+    first_s = _time_to_seconds(pattern.first_trip_start)
+    headway_s = int(pattern.headway_minutes * 60)
+    starts: list[datetime] = []
+    for n in range(pattern.total_trips_per_day):
+        start_s = first_s + n * headway_s
+        starts.append(_seconds_to_datetime(service_date, start_s))
+    return starts
+
+
+def _time_to_seconds(value: str) -> int:
+    hours, minutes, seconds = (int(part) for part in value.split(":"))
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _seconds_to_datetime(service_date: date, seconds: int) -> datetime:
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return datetime.combine(service_date, time(h, m, s), tzinfo=PKT)
 
 
 class ImportValidationError(Exception):
@@ -81,6 +141,9 @@ class ImportReport:
     routes_updated: int = 0
     route_stops_created: int = 0
     route_stops_updated: int = 0
+    trips_created: int = 0
+    trips_replaced: int = 0
+    stop_times_created: int = 0
     warnings: tuple[ValidationIssue, ...] = ()
 
 
@@ -104,15 +167,27 @@ async def _get_or_create_agency(
 
 async def _get_or_create_stop(
     session: AsyncSession,
+    ref: str | None,
     name: str,
-    latitude: float,
-    longitude: float,
+    latitude: float | None,
+    longitude: float | None,
     report: ImportReport,
 ) -> Stop:
-    existing = (
-        await session.execute(select(Stop).where(Stop.name == name))
-    ).scalar_one_or_none()
-    location = f"SRID=4326;POINT({longitude} {latitude})"
+    # Match by the stable dataset `ref` when present (the canonical
+    # transit_data.json carries it, and its stops are NOT unique by name -
+    # see db/models/stop.py's `ref` docstring); fall back to the legacy
+    # name heuristic for imports that carry no ref.
+    if ref is not None:
+        existing = (
+            await session.execute(select(Stop).where(Stop.ref == ref))
+        ).scalar_one_or_none()
+    else:
+        existing = (
+            await session.execute(select(Stop).where(Stop.name == name))
+        ).scalar_one_or_none()
+    location = None
+    if latitude is not None and longitude is not None:
+        location = f"SRID=4326;POINT({longitude} {latitude})"
     if existing is not None:
         # `Stop.location` round-trips through GeoAlchemy2 as an opaque
         # WKB element (see db/models/stop.py's docstring), not something
@@ -131,16 +206,19 @@ async def _get_or_create_stop(
                 ).where(Stop.id == existing.id)
             )
         ).one()
-        moved = (
-            current_longitude is None
-            or abs(current_longitude - longitude) > 1e-9
-            or abs(current_latitude - latitude) > 1e-9
-        )
+        moved = current_longitude is None and location is not None
+        if location is not None and current_longitude is not None:
+            moved = (
+                abs(current_longitude - longitude) > 1e-9
+                or abs(current_latitude - latitude) > 1e-9
+            )
         if moved:
             existing.location = location
             report.stops_updated += 1
+        if existing.ref is None and ref is not None:
+            existing.ref = ref
         return existing
-    stop = Stop(name=name, location=location)
+    stop = Stop(ref=ref, name=name, location=location)
     session.add(stop)
     await session.flush()
     report.stops_created += 1
@@ -223,7 +301,13 @@ async def _get_or_create_route_stop(
     return route_stop
 
 
-async def import_dataset(session: AsyncSession, dataset: ImportDataset) -> ImportReport:
+async def import_dataset(
+    session: AsyncSession,
+    dataset: ImportDataset,
+    *,
+    allow_routes_without_stops: bool = False,
+    service_date: date | None = None,
+) -> ImportReport:
     """Validate then persist `dataset`.
 
     Raises `ImportValidationError` (no writes at all) if validation finds
@@ -232,10 +316,32 @@ async def import_dataset(session: AsyncSession, dataset: ImportDataset) -> Impor
     an `ImportReport` on success - which may still carry `warnings` (e.g.
     a non-contiguous route stop sequence) even though the import
     succeeded, since warnings never block an import.
+
+    `allow_routes_without_stops` is forwarded to `validate_dataset` - see
+    its docstring. When `dataset.trip_patterns` is non-empty, `service_date`
+    is required (the calendar-day the generated trips belong to); pass it
+    as a fixed, deterministic date in tests/scripts so re-imports are
+    idempotent.
     """
-    result = validate_dataset(dataset)
+    result = validate_dataset(dataset, allow_routes_without_stops=allow_routes_without_stops)
     if not result.is_valid:
         raise ImportValidationError(result)
+
+    if dataset.trip_patterns and service_date is None:
+        raise ImportValidationError(
+            ValidationResult(
+                issues=(
+                    ValidationIssue(
+                        "error",
+                        "missing_service_date",
+                        "Dataset has trip_patterns but import_dataset was "
+                        "called without service_date; a service date is "
+                        "required to expand patterns into Trip rows.",
+                        "import_dataset",
+                    ),
+                )
+            )
+        )
 
     report = ImportReport(warnings=result.warnings)
 
@@ -250,6 +356,7 @@ async def import_dataset(session: AsyncSession, dataset: ImportDataset) -> Impor
         for import_stop in dataset.stops:
             stops_by_ref[import_stop.ref] = await _get_or_create_stop(
                 session,
+                import_stop.ref,
                 import_stop.name,
                 import_stop.latitude,
                 import_stop.longitude,
@@ -292,9 +399,68 @@ async def import_dataset(session: AsyncSession, dataset: ImportDataset) -> Impor
                     report,
                 )
 
+        if dataset.trip_patterns:
+            assert service_date is not None  # guarded above
+            await _import_trip_patterns(
+                session, dataset, routes_by_ref, stops_by_ref, service_date, report
+            )
+
         await session.commit()
     except Exception as exc:
         await session.rollback()
         raise ImportPersistenceError(f"Import failed and was rolled back: {exc}") from exc
 
     return report
+
+
+async def _import_trip_patterns(
+    session: AsyncSession,
+    dataset: ImportDataset,
+    routes_by_ref: dict[str, Route],
+    stops_by_ref: dict[str, Stop],
+    service_date: date,
+    report: ImportReport,
+) -> None:
+    """Expand every `ImportTripPattern` into its day's `Trip` + `StopTime`
+    rows. Deterministic IDs (`trip_id_for`/`stop_time_id_for`) mean
+    re-importing the same pattern on the same service date lands on the
+    same rows: existing rows with those IDs are deleted first (replace
+    semantics - trips are pattern-generated, not user-edited), then the
+    fresh trips are inserted."""
+    for pattern in dataset.trip_patterns:
+        route = routes_by_ref[pattern.route_ref]
+        direction = pattern.direction.lower()
+        stop_times = dataset.stop_times_for(pattern.route_ref, direction)
+
+        for start in generate_trip_starts(pattern, service_date):
+            trip_id = trip_id_for(route.id, direction, start)
+            existing = (
+                await session.execute(select(Trip).where(Trip.id == trip_id))
+            ).scalar_one_or_none()
+            if existing is not None:
+                await session.delete(existing)
+                await session.flush()
+                report.trips_replaced += 1
+
+            trip = Trip(
+                id=trip_id,
+                route_id=route.id,
+                status="scheduled",
+                scheduled_start_time=start,
+            )
+            session.add(trip)
+            await session.flush()
+            report.trips_created += 1
+
+            for st in stop_times:
+                stop_time = StopTime(
+                    id=stop_time_id_for(trip_id, st.sequence),
+                    trip_id=trip_id,
+                    stop_id=stops_by_ref[st.stop_ref].id,
+                    sequence=st.sequence,
+                    arrival_offset_s=st.arrival_offset_s,
+                    departure_offset_s=st.departure_offset_s,
+                )
+                session.add(stop_time)
+                report.stop_times_created += 1
+        await session.flush()

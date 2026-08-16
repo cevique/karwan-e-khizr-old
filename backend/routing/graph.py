@@ -172,18 +172,26 @@ def _group_by_from_stop(
 
 
 async def _fetch_nodes(session: AsyncSession) -> dict[uuid.UUID, GraphNode]:
-    """Every Stop, with its coordinates extracted via `ST_X`/`ST_Y` - the
-    same pattern `api/transit/router.py` uses, for consistency (see that
-    module's docstring for why: GeoAlchemy2 loads `Stop.location` as an
-    opaque WKB element, so coordinates are extracted in SQL rather than in
-    Python, avoiding a new dependency)."""
+    """Every Stop with coordinates, with those coordinates extracted via
+    `ST_X`/`ST_Y` - the same pattern `api/transit/router.py` uses, for
+    consistency (see that module's docstring for why: GeoAlchemy2 loads
+    `Stop.location` as an opaque WKB element, so coordinates are extracted
+    in SQL rather than in Python, avoiding a new dependency).
+
+    `Stop.location` is nullable (Phase 1: ~105 of the canonical dataset's
+    122 stops have no coordinates yet - see `docs/DATA_GAPS.md`), so stops
+    without coordinates are filtered out here rather than becoming
+    coordinate-less graph nodes. The graph simply has no node for a stop
+    it can't position."""
     from geoalchemy2 import Geometry
     from sqlalchemy import cast
 
     longitude_expr = func.ST_X(cast(Stop.location, Geometry)).label("longitude")
     latitude_expr = func.ST_Y(cast(Stop.location, Geometry)).label("latitude")
 
-    result = await session.execute(select(Stop, longitude_expr, latitude_expr))
+    result = await session.execute(
+        select(Stop, longitude_expr, latitude_expr).where(Stop.location.is_not(None))
+    )
     return {
         stop.id: GraphNode(
             stop_id=stop.id, name=stop.name, latitude=latitude, longitude=longitude
@@ -212,6 +220,14 @@ async def _fetch_ride_edges(
     for route in routes:
         ordered_route_stops = sorted(route.route_stops, key=lambda rs: rs.sequence)
         for current_rs, next_rs in pairwise(ordered_route_stops):
+            # A stop whose coordinates aren't known yet (Stop.location is
+            # nullable) has no graph node - the ride edge through it can't
+            # be weighted, so it is skipped. Stops on either side of a gap
+            # still connect across it (edge from the previous positioned
+            # stop to the next positioned one) because each consecutive
+            # pair is considered independently.
+            if current_rs.stop_id not in nodes or next_rs.stop_id not in nodes:
+                continue
             duration_s = ride_time_estimator(
                 current_rs.distance_along_route_m,
                 next_rs.distance_along_route_m,
