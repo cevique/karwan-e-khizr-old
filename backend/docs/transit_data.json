@@ -1,0 +1,2662 @@
+{
+  "$schema_note": "Canonical machine-readable research dataset for Karwan-e-Khizr. See TRANSIT_RESEARCH.md, SOURCES.md and DATA_GAPS.md for full context. Every record carries 'source' and 'confidence'. Confidence values: OFFICIAL, VERIFIED, OSM-DERIVED, RECONSTRUCTED, INFERRED, APPROXIMATE, UNKNOWN. null fields are deliberate - no field in this file was fabricated to fill a gap.",
+  "geographic_scope": "Islamabad + Rawalpindi twin-city corridor only",
+  "generated": "2026-08-16",
+  "operators": [
+    {
+      "id": "357f3aac-1df5-5e69-988c-de1060f37990",
+      "key": "pmta",
+      "name": "Punjab Mass Transit Authority (PMTA)",
+      "network_type": "brt",
+      "jurisdiction": "Government of Punjab",
+      "notes": "Manages the Red Line (the original 2015 corridor, Pak Secretariat - Saddar).",
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus (infobox + operator note)",
+      "confidence": "VERIFIED"
+    },
+    {
+      "id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "key": "cda_cmta",
+      "name": "Capital Development Authority (CDA) / Capital Mass Transit Authority (CMTA)",
+      "network_type": "brt+feeder",
+      "jurisdiction": "Federal / Islamabad Capital Territory",
+      "notes": "CDA manages Orange, Blue and Green Metrobus lines plus the CDA feeder-route network (FR-01..FR-15+) inside Islamabad. CMTA was created to operate the non-Red-Line network; in practice CDA and CMTA are referenced near-interchangeably in public sources. Treated as ONE agency here pending a clearer operator-of-record split; see DATA_GAPS.md.",
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus; CDA Transit Map PDF",
+      "confidence": "VERIFIED"
+    }
+  ],
+  "stops": [
+    {
+      "id": "9e87a1f5-aafd-52ac-b389-1c1976db80e1",
+      "key": "saddar",
+      "name": "Saddar",
+      "latitude": 33.646,
+      "longitude": 73.048,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=saddar); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "756c9bd3-e233-5e8f-8ce2-7cd6c0462637",
+      "key": "marir_chowk",
+      "name": "Marrir Chowk",
+      "latitude": 33.651,
+      "longitude": 73.047,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=marir_chowk); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "c30641af-9288-5e22-acad-feb59be7370e",
+      "key": "liaquat_bagh",
+      "name": "Liaquat Bagh",
+      "latitude": 33.6395,
+      "longitude": 73.048,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=liaquat_bagh); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "d82097b5-1019-51b8-aaba-0468300815ce",
+      "key": "committee_chowk",
+      "name": "Committee Chowk",
+      "latitude": 33.657,
+      "longitude": 73.045,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=committee_chowk); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "f07361b1-0bd4-5f90-96f3-66880e8a15f4",
+      "key": "waris_khan",
+      "name": "Waris Khan",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "ef669cb4-c2cb-5804-8ff6-af2ca6bc2e15",
+      "key": "chandni_chowk",
+      "name": "Chandni Chowk",
+      "latitude": 33.67,
+      "longitude": 73.039,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=chandni_chowk); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "0c19d5d4-984f-5059-9854-e35142908999",
+      "key": "rehmanabad",
+      "name": "Rehmanabad",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "9353c843-3b4e-589b-901a-059bcaea8a59",
+      "key": "sixth_road",
+      "name": "6th Road",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "3c1dbae4-06c1-56d6-8d89-85edb89f0a30",
+      "key": "shamsabad",
+      "name": "Shamsabad",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "2359f716-fd8d-503d-b87d-01b6cf4faaea",
+      "key": "faizabad",
+      "name": "Faizabad",
+      "latitude": 33.6873,
+      "longitude": 73.0551,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=faizabad); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "0ca70250-2225-521e-87c8-cf97b3a75a1b",
+      "key": "ijp_road",
+      "name": "IJP Road",
+      "latitude": 33.6817,
+      "longitude": 73.049,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=ijp_road); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "0baefb56-bb76-5145-9732-2070c82b059c",
+      "key": "potohar",
+      "name": "Potohar",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "a9749f19-3595-5dc1-833a-584f0bbcc07a",
+      "key": "khayaban_e_johar",
+      "name": "Khayaban-e-Johar",
+      "latitude": 33.676,
+      "longitude": 73.043,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=khayaban_e_johar); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "ecc1b302-a6ff-5067-816a-ba59498a66cd",
+      "key": "faiz_ahmed_faiz",
+      "name": "Faiz Ahmed Faiz",
+      "latitude": 33.665,
+      "longitude": 73.0345,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=faiz_ahmed_faiz); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "fe0d117f-2c9d-5d25-abdb-c1a3c4e97bdc",
+      "key": "peshawar_morr",
+      "name": "Peshawar Morr (Interchange)",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "527512f0-61d4-51f8-ada5-f6956b12b6a7",
+      "key": "chaman",
+      "name": "Chaman",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "cbf9c5e1-d6ee-5fd0-80cf-957821354b7a",
+      "key": "ibn_e_sina",
+      "name": "Ibn-e-Sina",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "4c005ac3-75f3-509f-9f72-dbbb67a604b1",
+      "key": "katchery",
+      "name": "Katchery",
+      "latitude": 33.661,
+      "longitude": 73.04,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=kachehri_chowk); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "d4b3f510-3f03-5b92-acba-2bcb18c50122",
+      "key": "stock_exchange",
+      "name": "Stock Exchange",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "c533fcd3-fd47-598c-b537-80ab0ec07c3d",
+      "key": "seventh_avenue",
+      "name": "7th Avenue",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "d6a28206-d524-507b-9a78-fda1d1620ab3",
+      "key": "shaheed_e_millat",
+      "name": "Shaheed-e-Millat",
+      "latitude": null,
+      "longitude": null,
+      "source": "Station name from rehbar.pk 'Rawalpindi Metro Bus Route & Stations List' (secondary, cross-checked against Wikipedia infobox station-name list); coordinate not established",
+      "confidence": "RECONSTRUCTED",
+      "notes": null
+    },
+    {
+      "id": "26a1efa9-dbaa-5064-9370-ad807fa217a1",
+      "key": "parade_ground",
+      "name": "Parade Ground",
+      "latitude": 33.704,
+      "longitude": 73.0722,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=parade_avenue); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "dcd68a2d-5b03-519f-b894-07c9aab4be15",
+      "key": "pak_secretariat",
+      "name": "Pak Secretariat",
+      "latitude": 33.7288,
+      "longitude": 73.0913,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=pak_secretariat); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": null
+    },
+    {
+      "id": "2f9c0551-119a-53a8-b6cd-bb3b06d194f5",
+      "key": "pims_hospital",
+      "name": "PIMS (Pakistan Institute of Medical Sciences)",
+      "latitude": 33.6988,
+      "longitude": 73.0653,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=pims); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": "Possible duplicate/alias of 'Ibn-e-Sina' station - unresolved, see DATA_GAPS.md."
+    },
+    {
+      "id": "470e9cae-f9d6-50e0-b29e-b894f05a9ded",
+      "key": "poly_clinic",
+      "name": "Poly Clinic",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "65fcc935-60a0-5f6a-85be-ddfaa9554ad0",
+      "key": "faisal_masjid",
+      "name": "Faisal Masjid",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "4e90ce99-3119-5b63-b842-557d1352233f",
+      "key": "golra_morr",
+      "name": "Golra Morh",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "1b70bc7a-a253-5fa7-b0e9-387538277ae9",
+      "key": "nust",
+      "name": "NUST",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "208bb2a4-d9cc-5b60-ae48-fd9609bebda3",
+      "key": "bari_imam",
+      "name": "Bari Imam",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "6200a81d-3d65-59d7-937d-9c1d423db346",
+      "key": "g13",
+      "name": "G-13",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "1b28f29a-5364-5a0b-aba2-8deac9ed1d13",
+      "key": "islamabad_airport",
+      "name": "New Islamabad International Airport",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "8ed938d6-a24f-584a-9c99-edea23650e24",
+      "key": "gulberg_green",
+      "name": "Gulberg Green",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "c79a04ec-5c70-5e45-888d-bcbb7511930c",
+      "key": "bhara_kahu",
+      "name": "Bhara Kahu",
+      "latitude": null,
+      "longitude": null,
+      "source": "Name from official/secondary route listing; coordinate not yet surveyed",
+      "confidence": "UNKNOWN",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "1fac3e73-1d75-55bb-adc6-45d8b31a30b0",
+      "key": "g9_markaz",
+      "name": "G-9 Markaz",
+      "latitude": 33.705,
+      "longitude": 73.085,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=g9_markaz); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "505c2ca5-b80f-5f54-b4c7-72a361a07a0d",
+      "key": "g10_markaz",
+      "name": "G-10 Markaz",
+      "latitude": 33.698,
+      "longitude": 73.09,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=g10_markaz); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "d6296021-f7ac-51c3-b57d-41d1aa0fd1d0",
+      "key": "bank_road",
+      "name": "Bank Road",
+      "latitude": 33.644,
+      "longitude": 73.046,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=bank_road); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "b5b7b142-8c8a-5c53-907d-a59e1dad84bb",
+      "key": "ammar_chowk",
+      "name": "Ammar Chowk",
+      "latitude": 33.635,
+      "longitude": 73.051,
+      "source": "Repository seed dataset (backend/data/seed_dataset.py, key=ammar_chowk); coordinate is repo-curated APPROXIMATE, not surveyed/official",
+      "confidence": "APPROXIMATE",
+      "notes": "Named on CDA Transit Map PDF and/or secondary sources; not yet placed in an ordered RouteStop sequence for this dataset."
+    },
+    {
+      "id": "fa79cfdc-3681-5935-91c1-8d5d594870fd",
+      "key": "cda_khanna_pul",
+      "name": "Khanna Pul",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "5d9e6536-f210-520c-9d40-346f43e97cb9",
+      "key": "cda_zia_masjid",
+      "name": "Zia Masjid",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "7fe10313-2cb8-5a2c-863e-6bad193a6d95",
+      "key": "cda_kuri_road",
+      "name": "Kuri Road",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "3ca65f28-9656-5d09-b51e-a92a28aa25ee",
+      "key": "cda_iqbal_town",
+      "name": "Iqbal Town",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "bd25671c-5cd4-53d2-b214-7102d9070e8f",
+      "key": "cda_dhok_kala_khan",
+      "name": "Dhok Kala Khan",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "49fba4a8-ffff-5890-9417-1c25931c1bd0",
+      "key": "cda_sohan",
+      "name": "Sohan",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "c0619f9d-4e9c-5b2a-b347-a075d59f4e12",
+      "key": "cda_faizabad",
+      "name": "Faizabad",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "8916895d-28ea-5bbb-86c5-e29642eae79f",
+      "key": "cda_ijp_metro_station",
+      "name": "IJP Metro Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "13ef1d5e-25f5-585c-a2ce-123958cc671b",
+      "key": "cda_potohar_metro_station",
+      "name": "Potohar Metro Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "2e5a0574-6c11-59a2-a9c6-2f54e7b2fdaf",
+      "key": "cda_mci_model_school",
+      "name": "MCI Model School",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "f79452ab-2453-53ed-b04a-a53125b60856",
+      "key": "cda_cda_complain_center",
+      "name": "CDA Complain Center",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "e43812d0-3b0c-58a4-9e8b-903a5d4536c3",
+      "key": "cda_ogti_stop",
+      "name": "OGTI Stop",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "4a1c9d59-c3ef-51c5-ae81-234923338fc4",
+      "key": "cda_sui_gas_stop",
+      "name": "Sui Gas Stop",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "bbad7a85-e4fc-56a0-8496-8308de42ee3b",
+      "key": "cda_ptcl_i_10",
+      "name": "PTCL I-10",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "acb10344-0c6e-5340-8291-db6fc9798650",
+      "key": "cda_iesco",
+      "name": "IESCO",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "e483fb22-a4ac-5864-96f2-4b1ee18d44a1",
+      "key": "cda_kurang_road",
+      "name": "Kurang Road",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "4646132a-60ea-592b-a844-74b4403146fb",
+      "key": "cda_mandi_morh",
+      "name": "Mandi Morh",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "57aebdbb-ec5d-5185-8dcf-dda502e8bc87",
+      "key": "cda_sabzi_mandi",
+      "name": "Sabzi Mandi",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "bd381069-16d2-5861-b33f-7cb51c0a4dc3",
+      "key": "cda_metro_cng",
+      "name": "Metro CNG",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "2103c6d6-c64f-5ee6-a8d6-8719a68b1c5a",
+      "key": "cda_imc_hospital",
+      "name": "IMC Hospital",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "1d1afad2-5ddd-5057-adb4-bfe29b7b6d70",
+      "key": "cda_paec_general_hospital",
+      "name": "PAEC General Hospital",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "580306ea-42e2-50ed-b643-507312418cb6",
+      "key": "cda_islamic_university",
+      "name": "Islamic University",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "1184fbd9-00a4-54cd-8dba-70bc7f8bda83",
+      "key": "cda_fast_university",
+      "name": "FAST University",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "b7783fda-707f-5d48-aa4b-78739826ad21",
+      "key": "cda_npa",
+      "name": "NPA",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "36969e8f-6c58-5e3c-b798-81324b1142dc",
+      "key": "cda_police_foundation_metro_station",
+      "name": "Police Foundation Metro Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "c46de208-1ceb-5ada-8496-f98e977effc4",
+      "key": "cda_nust_metro_station",
+      "name": "Nust Metro Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "2ccff938-6448-518b-ba16-eb90fa65d2cf",
+      "key": "cda_pims_hospital",
+      "name": "PIMS Hospital",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "098c9839-0582-5673-83da-0fd4b30436c5",
+      "key": "cda_children_hospital",
+      "name": "Children Hospital",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "68870edf-7347-512c-b645-2a6f31f175d2",
+      "key": "cda_rescue_15",
+      "name": "Rescue 15",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "ea113d71-680a-5543-9b76-98073340a97e",
+      "key": "cda_bank_colony",
+      "name": "Bank Colony",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "36c1cbd5-7812-5241-b783-aa59374ba557",
+      "key": "cda_salai_centre",
+      "name": "Salai Centre",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "3665df75-ced5-55bb-99c1-f49c3443edc4",
+      "key": "cda_sitara_market",
+      "name": "Sitara Market",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "27e00af3-03b4-5581-b453-2bc7e0e1ec3d",
+      "key": "cda_pully_stop",
+      "name": "Pully Stop",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "5cc9ab6b-23c9-59d3-b1d0-ae383b6f13dd",
+      "key": "cda_iqbal_hall",
+      "name": "Iqbal Hall",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "afa17d79-815d-5cd8-8af6-57673aec67fb",
+      "key": "cda_g_6_12",
+      "name": "G-6/1.2",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "1fd03a94-33a3-5a9a-832d-225a3f1328a4",
+      "key": "cda_melody_market",
+      "name": "Melody Market",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "fceaa920-7777-57be-b912-971c9f3827de",
+      "key": "cda_abpara_market",
+      "name": "Abpara Market",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "cdf509c4-6510-5396-9a95-31b21c1ef15b",
+      "key": "cda_youth_hostel",
+      "name": "Youth Hostel",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "54a302c8-ff6a-5cee-b01f-7a144ffbb5a7",
+      "key": "cda_metropolitan_corporation",
+      "name": "Metropolitan Corporation",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "227e8199-8915-59c1-8525-06f30f32f8b4",
+      "key": "cda_icb_college",
+      "name": "ICB College",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "a9b68f7c-a75b-5030-8918-318dad7b741f",
+      "key": "cda_nadra_chowk",
+      "name": "NADRA Chowk",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "46e3db25-443b-5731-93c2-bcc84eb43122",
+      "key": "cda_lodges_park",
+      "name": "Lodges Park",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "72846db0-92a2-52e8-aa6b-97cd09c83956",
+      "key": "cda_sukh_chayn_park",
+      "name": "Sukh Chayn Park",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "39187591-5114-5330-8173-3623c7181a6b",
+      "key": "cda_ministry_of_foreign_affairs",
+      "name": "Ministry of Foreign Affairs",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "f60df439-1f76-52a0-9b09-628b73c91d25",
+      "key": "cda_radio_pakistan",
+      "name": "Radio Pakistan",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "e04c6999-5b1a-5252-a6f4-66e1bf554c7c",
+      "key": "cda_national_library",
+      "name": "National Library",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "645b095f-c45f-5f6a-9ca3-b8579ac58dce",
+      "key": "cda_secretariate_police_station",
+      "name": "Secretariate Police Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "faee46e4-2b81-5a35-a465-c1fcea3b124b",
+      "key": "cda_diplomatic_enclave_gate_4",
+      "name": "Diplomatic Enclave Gate 4",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "70548d35-a148-5760-9c8d-ecdf58555de2",
+      "key": "cda_aiwan_e_sadar_colony",
+      "name": "Aiwan e Sadar Colony",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "29a6d144-5e62-5433-be70-b345857bb5c4",
+      "key": "cda_muslim_colony",
+      "name": "Muslim Colony",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "84ff49f7-6777-53ae-a846-5431f5e6e6b3",
+      "key": "cda_bari_imam",
+      "name": "Bari Imam",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "e881fa2b-c63b-5101-8beb-50798ea327e7",
+      "key": "cda_nori_hospital",
+      "name": "NORI Hospital",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "5b00700d-2d47-5a1d-b300-ce4aeb105942",
+      "key": "cda_dental_hospital",
+      "name": "Dental Hospital",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "88b8b763-149c-55c5-9a2a-d659b3a3b29d",
+      "key": "cda_g_8_markaz",
+      "name": "G-8 Markaz",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "facdba12-84ae-5df5-bc82-3de238c0dd06",
+      "key": "cda_development_park",
+      "name": "Development Park",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "42a5f0f6-82c8-50a0-aa6e-303bb4a66495",
+      "key": "cda_chaman_metro_station",
+      "name": "Chaman Metro Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "5f8460a6-2ea8-5e13-8555-3aa983d6244f",
+      "key": "cda_g_9_4",
+      "name": "G-9/4",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "524418c1-1f45-594d-9e11-ffcbd5cd5bd1",
+      "key": "cda_karachi_company",
+      "name": "Karachi Company",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "82be220b-ef31-552c-99de-1b1b1c693d79",
+      "key": "cda_g_9_markaz",
+      "name": "G-9 Markaz",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "cfa50cd6-764c-5b98-b958-d2ec3a4d0660",
+      "key": "cda_police_flats",
+      "name": "Police Flats",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "d0a88f81-81d0-5e2f-9bfb-93993e98dbfe",
+      "key": "cda_college_morh",
+      "name": "College Morh",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "72e8bbc1-42bc-5d85-ab0e-babc88a97aee",
+      "key": "cda_g_10_markaz",
+      "name": "G-10 Markaz",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "a2a2e798-07fa-541e-8776-b746be259cd0",
+      "key": "cda_pha_flats",
+      "name": "PHA Flats",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "d9ba95d4-a20b-538b-8210-c49dd683b34d",
+      "key": "cda_tanki_stop",
+      "name": "Tanki Stop",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "566cad4b-37e6-5055-bda2-59509ca25a32",
+      "key": "cda_g_10_g_11",
+      "name": "G-10/G-11",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "070305f4-6565-5fad-b136-f8ce5be6b0a9",
+      "key": "cda_institute_of_modern_studies",
+      "name": "Institute of Modern Studies",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "0590d806-e74c-5b4e-a689-f752d680dbef",
+      "key": "cda_g_11_markaz",
+      "name": "G-11 Markaz",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "56ac0440-f061-5efc-9aab-9249a990b9d1",
+      "key": "cda_mehrabad",
+      "name": "Mehrabad",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "c15457a4-5e26-5db3-831d-00823075992b",
+      "key": "cda_bar_council",
+      "name": "Bar Council",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "de12ec6f-78aa-5842-9e1a-f71f77f0ab04",
+      "key": "cda_ak_bari_road",
+      "name": "A.K Bari Road",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "ed3993bf-6dbe-5757-8e5a-b0c1ce9e192f",
+      "key": "cda_barakahu",
+      "name": "Barakahu",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "aac766f0-ca86-5002-a387-8ccbda5969dc",
+      "key": "cda_shahdara",
+      "name": "Shahdara",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "77b68057-ab55-5291-885c-d629bbf1f8cb",
+      "key": "cda_malpur",
+      "name": "Malpur",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "5a2eb3f0-caa1-5ddd-906a-aecb0a311b6e",
+      "key": "cda_lake_view_park",
+      "name": "Lake View Park",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "1af489f8-023d-570d-9225-7444a8ceee84",
+      "key": "cda_dhokri_stop",
+      "name": "Dhokri Stop",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "967e2bf6-0255-5c08-9b84-1281d5be8fa3",
+      "key": "cda_kashmir_chowk",
+      "name": "Kashmir Chowk",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "f0bcb7f0-02f5-5f3a-b661-363528cab0eb",
+      "key": "cda_rawal_dam_chowk",
+      "name": "Rawal Dam Chowk",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "e02292c8-e19c-51c1-96b4-e06bc836d418",
+      "key": "cda_garden_avenue",
+      "name": "Garden Avenue",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "9ad66849-a6bd-5b20-835a-de16101c2063",
+      "key": "cda_margalla_town",
+      "name": "Margalla Town",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "41580978-14f9-5718-9691-0c46c666d3ff",
+      "key": "cda_itp_driving_license_centre",
+      "name": "ITP Driving License Centre",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "97673faf-d1c4-5fb5-bcc7-2b0db3ff5157",
+      "key": "cda_faizabad_metro_station",
+      "name": "Faizabad Metro Station",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "a08198e3-bbb2-5626-9942-879cad59cb2a",
+      "key": "cda_pindora_chungi",
+      "name": "Pindora Chungi",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "4584de61-d4df-598d-816b-e21a2f7c8865",
+      "key": "cda_katarian_chungi",
+      "name": "Katarian Chungi",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "928dfbbf-f866-5c62-8cac-a9e792880e49",
+      "key": "cda_katarian_pull",
+      "name": "Katarian Pull",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    },
+    {
+      "id": "901f8784-3b4a-518b-89c8-5fa205564696",
+      "key": "cda_cda_stop",
+      "name": "CDA Stop",
+      "latitude": null,
+      "longitude": null,
+      "source": "CDA official per-route timetable PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "Stop name and sequence position are OFFICIAL (from CDA's own published stop-level timetable). No coordinate is given by this source - latitude/longitude intentionally left null, not fabricated."
+    }
+  ],
+  "routes": [
+    {
+      "id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "key": "red_line",
+      "agency_id": "357f3aac-1df5-5e69-988c-de1060f37990",
+      "short_name": "Red",
+      "long_name": "Pak Secretariat - Saddar",
+      "color": "#C62828",
+      "length_km": 22.5,
+      "official_station_count": 24,
+      "frequency": {
+        "peak": "every 3-6 minutes (06:00-20:00)",
+        "off_peak": "UNKNOWN",
+        "source": "Wikipedia infobox table"
+      },
+      "operating_hours": {
+        "start": "06:15",
+        "end": "22:00",
+        "source": "multiple secondary sources, consistent"
+      },
+      "dedicated_lane": true,
+      "opened": "2015-06-04",
+      "geometry": "UNKNOWN - no official polyline found; road-following geometry must be reconstructed (see Route Geometry section, TRANSIT_RESEARCH.md)",
+      "path_wkt": null,
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus (infobox summary table)",
+      "confidence": "VERIFIED",
+      "notes": "23 named stations reconstructed here (rehbar.pk ordered list, cross-checked against Wikipedia's unordered infobox names) against an official count of 24 - see DATA_GAPS.md 'Red Line station count discrepancy'."
+    },
+    {
+      "id": "890d30f3-fc9a-5610-abe4-554545c46b9b",
+      "key": "orange_line",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "Orange",
+      "long_name": "Faiz Ahmed Faiz (H-8/2) - New Islamabad International Airport",
+      "color": "#F57C00",
+      "length_km": 25.6,
+      "official_station_count": 7,
+      "frequency": {
+        "value": "every 5-10 minutes",
+        "source": "Wikipedia infobox / INCPak"
+      },
+      "operating_hours": {
+        "start": "06:15",
+        "end": "22:00",
+        "source": "multiple secondary sources, consistent"
+      },
+      "dedicated_lane": true,
+      "opened": "2022-04-18",
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus (route table)",
+      "confidence": "VERIFIED",
+      "notes": "CONFLICT: Wikipedia's own summary table says 7 stations; several secondary listicles (INCPak, icons.com.pk) say 14. Not resolved - see DATA_GAPS.md. Ordered stop sequence NOT established in this research pass; only endpoints and the Faiz Ahmed Faiz interchange with the Red Line are confirmed."
+    },
+    {
+      "id": "9190205e-cd08-50a0-9fb2-c0fa7f27533b",
+      "key": "blue_line",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "Blue",
+      "long_name": "PIMS - Gulberg Green",
+      "color": "#1565C0",
+      "length_km": 20.0,
+      "official_station_count": 13,
+      "frequency": {
+        "value": "every 6 minutes",
+        "source": "Wikipedia infobox / route table"
+      },
+      "operating_hours": {
+        "start": "06:15",
+        "end": "22:00",
+        "source": "secondary sources"
+      },
+      "dedicated_lane": false,
+      "opened": "2022-07-07",
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus (route table)",
+      "confidence": "VERIFIED",
+      "notes": "Runs in mixed traffic along the Islamabad Expressway (not a dedicated lane) - important for simulation speed assumptions, see SIMULATION_DATA_SPEC.md. Ordered stop sequence not established; only a partial, unordered name list is available (Gulberg, Koral, Gangal, Fazaia, Lehtrar/Khanna, Zia Masjid, Kuri Road, Iqbal Town, Dhoke Kala Khan, Sohan, I-8, H-8, G-7/G-8, PIMS Gate - this is 14 names against an official count of 13, another unresolved count mismatch)."
+    },
+    {
+      "id": "51f798dd-bece-53e7-ae87-1f45360ca232",
+      "key": "green_line",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "Green",
+      "long_name": "PIMS - Bhara Kahu",
+      "color": "#2E7D32",
+      "length_km": 15.5,
+      "official_station_count": 8,
+      "frequency": {
+        "value": "every 6 minutes",
+        "source": "Wikipedia infobox / route table"
+      },
+      "operating_hours": {
+        "start": "06:15",
+        "end": "22:00",
+        "source": "secondary sources"
+      },
+      "dedicated_lane": false,
+      "opened": "2022-07-07",
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus (route table)",
+      "confidence": "VERIFIED",
+      "notes": "Runs in mixed traffic along Srinagar Highway. Ordered stop list not established."
+    },
+    {
+      "id": "c79d67e2-dfb4-5109-9f40-3c2b26070258",
+      "key": "fr_01",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-01",
+      "long_name": "Khanna Pul - NUST Metro Station",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Ordered stop-level timetable data IMPORTED for this route/direction - see `trips` array (kind=CANONICAL_PATTERN). Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf. via I-9, I-10 & Police Lines (Sohan to NUST Metro Station variant per Daily Times; the fetched PDF's endpoints are Khanna Pul<->NUST Metro Station)"
+    },
+    {
+      "id": "58e7179b-bcf3-5387-982d-e61cc622d9f7",
+      "key": "fr_03a",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-03A",
+      "long_name": "PIMS Hospital - Saidpur Village",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 20 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-03A_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-03A_Backward.pdf. via F-8 Markaz & Shaheen Chowk"
+    },
+    {
+      "id": "0a0217f7-3683-5df2-8ef4-8468d5755364",
+      "key": "fr_04",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-04",
+      "long_name": "PIMS Hospital - Bari Imam",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 10 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Ordered stop-level timetable data IMPORTED for this route/direction - see `trips` array (kind=CANONICAL_PATTERN). Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Backward.pdf. via G-6, G-7 & Abpara"
+    },
+    {
+      "id": "8840e4b5-4963-540a-a98a-2eaf5da38e7c",
+      "key": "fr_04a",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-04A",
+      "long_name": "Bari Imam - Quaid-e-Azam University",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 30 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04A_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-04A_Backward.pdf."
+    },
+    {
+      "id": "69f9abfe-b4ab-5b1e-982e-1b590325332e",
+      "key": "fr_04b",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-04B",
+      "long_name": "Diplomatic Enclave Shuttle Service",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "irregular/random",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route."
+    },
+    {
+      "id": "cd654519-06b3-5ed3-81a4-5899e6fa5456",
+      "key": "fr_05",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-05",
+      "long_name": "Golra Morh - Taxila",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 5 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-05_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-05_Backward.pdf. via G-11, F-11, D-12 & Margalla Road (reported jointly with FR-10)"
+    },
+    {
+      "id": "72095197-1804-51ee-9ca0-bd70c897ea9d",
+      "key": "fr_06",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-06",
+      "long_name": "PIMS Hospital - Golra Sharif",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-06_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-06_Backward.pdf. via G-9, Shaheen Chowk, F-9, F-10 & F-11 Markaz"
+    },
+    {
+      "id": "1ce08d52-fc4c-5537-a10c-788784c25578",
+      "key": "fr_07",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-07",
+      "long_name": "PIMS Hospital - Police Foundation Metro Station",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 10 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Ordered stop-level timetable data IMPORTED for this route/direction - see `trips` array (kind=CANONICAL_PATTERN). Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Backward.pdf. via G-8, G-9, G-10 & G-11"
+    },
+    {
+      "id": "cd9a2844-6fa3-5905-a5b3-a61a159452a9",
+      "key": "fr_08a",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-08A",
+      "long_name": "PIMS Hospital - Capt. Naeem Tufail Shaheed Chowk (via Abpara)",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 20 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-08A_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-08A_Backward.pdf. via Abpara"
+    },
+    {
+      "id": "192b7e26-2f5a-55bc-82ac-0510fe82ba51",
+      "key": "fr_08c",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-08C",
+      "long_name": "PIMS Hospital - Capt. Naeem Tufail Shaheed Chowk (via Faizabad)",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 20 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-08C_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-08C_Backward.pdf. via Faizabad"
+    },
+    {
+      "id": "6ad1600e-a794-5af4-8e33-9d2acb72556e",
+      "key": "fr_09",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-09",
+      "long_name": "Khanna Pul - Golra Morh Metro Station",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 15 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-09_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-09_Backward.pdf. via Faizabad, IJP Road"
+    },
+    {
+      "id": "ae3136b0-74cb-5608-ab5a-e383006f73ac",
+      "key": "fr_10",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-10",
+      "long_name": "Golra Morh Metro Station - Taxila",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-10_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-10_Backward.pdf."
+    },
+    {
+      "id": "fc46dd2c-fa20-5a99-a256-3ae865b71da2",
+      "key": "fr_11",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-11",
+      "long_name": "Golra Morh Metro Station - I-16",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-11_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-11_Backward.pdf. via Motorway Chowk and Golra Morh (Daily Times states endpoint as I-14, differing from the CDA index page's I-16 - see DATA_GAPS.md)"
+    },
+    {
+      "id": "15dd5dd7-1a8c-5fb0-979a-7215a355f37b",
+      "key": "fr_12",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-12",
+      "long_name": "Taxila - Hassan Abdal",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-12_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-12_Backward.pdf."
+    },
+    {
+      "id": "92a77ead-ece0-5f14-b46f-8804533e6435",
+      "key": "fr_13",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-13",
+      "long_name": "Golra Morh Metro Station - Fateh Jang",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-13_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-13_Backward.pdf."
+    },
+    {
+      "id": "2d82c1c4-c3c7-5267-a454-c096d6bec25c",
+      "key": "fr_14",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-14",
+      "long_name": "Bara Kahu - Mandi Morh",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 15 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Ordered stop-level timetable data IMPORTED for this route/direction - see `trips` array (kind=CANONICAL_PATTERN). Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Backward.pdf. via Faizabad, IJP Road"
+    },
+    {
+      "id": "77f56cb6-75f5-59ab-ada0-cbc9333c3aaf",
+      "key": "fr_14a",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-14A",
+      "long_name": "Bara Kahu - Satra Meel",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 15 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14A_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-14A_Backward.pdf. via Murree Road"
+    },
+    {
+      "id": "6080bbc9-4bc8-5cbf-a059-bb9c0814afa4",
+      "key": "fr_15",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FR-15",
+      "long_name": "Khanna Pul - T-Chowk",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 30 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-15_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FR-15_Backward.pdf. Daily Times describes this as Khanna Pul-Rawat; the CDA index page states Khanna Pul-T-Chowk - see DATA_GAPS.md"
+    },
+    {
+      "id": "31ac4417-1273-5f1d-a7e2-561a4710849a",
+      "key": "frb_01",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FRB-01",
+      "long_name": "PIMS - Gulberg",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 5 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FRB-01_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FRB-01_Backward.pdf."
+    },
+    {
+      "id": "0b8fcfde-7efa-53c9-9c9a-86e8b6098cb1",
+      "key": "frg_1",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "FRG-1",
+      "long_name": "PIMS - Barakahu",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 5 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FRG-1_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/FRG-1_Backward.pdf."
+    },
+    {
+      "id": "8223da34-d5ae-5606-9ccc-4393a6c7c12a",
+      "key": "st_01",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "ST-01",
+      "long_name": "PIMS - Daman-e-Koh (Sat/Sun only)",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/ST-01_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/ST-01_Backward.pdf."
+    },
+    {
+      "id": "e790a940-c51f-5bc9-af09-664bb857d2a9",
+      "key": "st_02",
+      "agency_id": "a6a26eed-e2e3-5dd9-b5cb-425acd62cac1",
+      "short_name": "ST-02",
+      "long_name": "PIMS - Capt. Naeem Tufail Shaheed Chowk via Shakarparian Park (Sat/Sun only)",
+      "color": null,
+      "length_km": null,
+      "official_station_count": null,
+      "frequency": {
+        "value": "every 60 min",
+        "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)"
+      },
+      "operating_hours": {
+        "note": "Not separately published on the index page; observed PDF trip windows for routes with a fetched timetable span roughly 06:00-22:00 - see route notes."
+      },
+      "dedicated_lane": false,
+      "opened": null,
+      "geometry": "UNKNOWN",
+      "path_wkt": null,
+      "source": "CDA Transit Map route-index page, https://www.cda.gov.pk/cdaTransitMap (official, tabular 'CDA Transit Map - Route Details' listing every route code, name, direction pair, and headway, each linking to its own stop-level PDF under https://www.cda.gov.pk/Assets/metro_transit_route/)",
+      "confidence": "OFFICIAL",
+      "notes": "Route name, endpoints and headway are OFFICIAL (from the CDA index page). Ordered stop-level timetable NOT fetched in this research pass - see DATA_GAPS.md. Forward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/ST-02_Forward.pdf. Backward PDF: https://www.cda.gov.pk/Assets/metro_transit_route/ST-02_Backward.pdf."
+    }
+  ],
+  "route_stops": [
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "9e87a1f5-aafd-52ac-b389-1c1976db80e1",
+      "sequence": 1,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "756c9bd3-e233-5e8f-8ce2-7cd6c0462637",
+      "sequence": 2,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "c30641af-9288-5e22-acad-feb59be7370e",
+      "sequence": 3,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "d82097b5-1019-51b8-aaba-0468300815ce",
+      "sequence": 4,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "f07361b1-0bd4-5f90-96f3-66880e8a15f4",
+      "sequence": 5,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "ef669cb4-c2cb-5804-8ff6-af2ca6bc2e15",
+      "sequence": 6,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "0c19d5d4-984f-5059-9854-e35142908999",
+      "sequence": 7,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "9353c843-3b4e-589b-901a-059bcaea8a59",
+      "sequence": 8,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "3c1dbae4-06c1-56d6-8d89-85edb89f0a30",
+      "sequence": 9,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "2359f716-fd8d-503d-b87d-01b6cf4faaea",
+      "sequence": 10,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "0ca70250-2225-521e-87c8-cf97b3a75a1b",
+      "sequence": 11,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "0baefb56-bb76-5145-9732-2070c82b059c",
+      "sequence": 12,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "a9749f19-3595-5dc1-833a-584f0bbcc07a",
+      "sequence": 13,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "ecc1b302-a6ff-5067-816a-ba59498a66cd",
+      "sequence": 14,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "fe0d117f-2c9d-5d25-abdb-c1a3c4e97bdc",
+      "sequence": 15,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "527512f0-61d4-51f8-ada5-f6956b12b6a7",
+      "sequence": 16,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "cbf9c5e1-d6ee-5fd0-80cf-957821354b7a",
+      "sequence": 17,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "4c005ac3-75f3-509f-9f72-dbbb67a604b1",
+      "sequence": 18,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "d4b3f510-3f03-5b92-acba-2bcb18c50122",
+      "sequence": 19,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "c533fcd3-fd47-598c-b537-80ab0ec07c3d",
+      "sequence": 20,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "d6a28206-d524-507b-9a78-fda1d1620ab3",
+      "sequence": 21,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "26a1efa9-dbaa-5064-9370-ad807fa217a1",
+      "sequence": 22,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    },
+    {
+      "route_id": "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+      "stop_id": "dcd68a2d-5b03-519f-b894-07c9aab4be15",
+      "sequence": 23,
+      "distance_along_route_m": null,
+      "source": "Reconstructed ordering, rehbar.pk table cross-checked against Wikipedia station names",
+      "confidence": "RECONSTRUCTED"
+    }
+  ],
+  "route_variants": [],
+  "service_calendars": [
+    {
+      "id": "231f37d0-dff2-5abc-b522-fdd383c84294",
+      "key": "daily_default",
+      "days": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+      ],
+      "notes": "No official published service-calendar exceptions (holidays, reduced-Sunday-service, etc.) were found for the Metrobus network. All secondary sources describe uniform daily 06:15-22:00 operation. The CDA Transit Map PDF documents Saturday/Sunday-ONLY special trips ST-01 (PIMS - Daman-e-Koh) and ST-02 (PIMS - Shakarpariyan / Capt. Naeem T. Shaheed Chowk - Shakarpariyan), each hourly - these are modeled as a separate weekend-only calendar below.",
+      "source": "Multiple secondary sources (consistent); CDA Transit Map PDF for weekend specials",
+      "confidence": "VERIFIED"
+    },
+    {
+      "id": "13e32f07-d526-5146-a2df-aeb9a7e73a89",
+      "key": "weekend_special",
+      "days": [
+        "saturday",
+        "sunday"
+      ],
+      "notes": "Applies only to CDA special trips ST-01 and ST-02 (see routes 'notes' fields would apply if these were modeled as routes - they are NOT yet in `routes` above; recorded here only as a calendar stub).",
+      "source": "CDA Transit Map PDF (https://www.cda.gov.pk/Assets/pdf/Transit-Map-Islamabad-V-06.pdf)",
+      "confidence": "OFFICIAL"
+    }
+  ],
+  "trips": [
+    {
+      "id": "77b74394-6851-5881-ab5f-ca50c1e80b7b",
+      "route_id": "c79d67e2-dfb4-5109-9f40-3c2b26070258",
+      "kind": "CANONICAL_PATTERN",
+      "gtfs_route_id_on_pdf": "10001",
+      "direction": "Backward",
+      "canonical_trip_id_on_pdf": "176081-0",
+      "canonical_trip_start_time": "07:15:00",
+      "headway_min": 60,
+      "total_trips_per_day": 16,
+      "first_trip_start": "07:15:00",
+      "last_trip_start": "22:00:00",
+      "stop_times": [
+        {
+          "stop_id": "fa79cfdc-3681-5935-91c1-8d5d594870fd",
+          "arrival_offset_s": 0,
+          "departure_offset_s": 0
+        },
+        {
+          "stop_id": "5d9e6536-f210-520c-9d40-346f43e97cb9",
+          "arrival_offset_s": 168,
+          "departure_offset_s": 188
+        },
+        {
+          "stop_id": "7fe10313-2cb8-5a2c-863e-6bad193a6d95",
+          "arrival_offset_s": 308,
+          "departure_offset_s": 328
+        },
+        {
+          "stop_id": "3ca65f28-9656-5d09-b51e-a92a28aa25ee",
+          "arrival_offset_s": 428,
+          "departure_offset_s": 448
+        },
+        {
+          "stop_id": "bd25671c-5cd4-53d2-b214-7102d9070e8f",
+          "arrival_offset_s": 543,
+          "departure_offset_s": 563
+        },
+        {
+          "stop_id": "49fba4a8-ffff-5890-9417-1c25931c1bd0",
+          "arrival_offset_s": 663,
+          "departure_offset_s": 683
+        },
+        {
+          "stop_id": "c0619f9d-4e9c-5b2a-b347-a075d59f4e12",
+          "arrival_offset_s": 843,
+          "departure_offset_s": 863
+        },
+        {
+          "stop_id": "8916895d-28ea-5bbb-86c5-e29642eae79f",
+          "arrival_offset_s": 993,
+          "departure_offset_s": 1013
+        },
+        {
+          "stop_id": "13ef1d5e-25f5-585c-a2ce-123958cc671b",
+          "arrival_offset_s": 1273,
+          "departure_offset_s": 1293
+        },
+        {
+          "stop_id": "2e5a0574-6c11-59a2-a9c6-2f54e7b2fdaf",
+          "arrival_offset_s": 1403,
+          "departure_offset_s": 1423
+        },
+        {
+          "stop_id": "f79452ab-2453-53ed-b04a-a53125b60856",
+          "arrival_offset_s": 1523,
+          "departure_offset_s": 1543
+        },
+        {
+          "stop_id": "e43812d0-3b0c-58a4-9e8b-903a5d4536c3",
+          "arrival_offset_s": 1653,
+          "departure_offset_s": 1673
+        },
+        {
+          "stop_id": "4a1c9d59-c3ef-51c5-ae81-234923338fc4",
+          "arrival_offset_s": 1753,
+          "departure_offset_s": 1773
+        },
+        {
+          "stop_id": "bbad7a85-e4fc-56a0-8496-8308de42ee3b",
+          "arrival_offset_s": 1903,
+          "departure_offset_s": 1923
+        },
+        {
+          "stop_id": "acb10344-0c6e-5340-8291-db6fc9798650",
+          "arrival_offset_s": 2013,
+          "departure_offset_s": 2033
+        },
+        {
+          "stop_id": "e483fb22-a4ac-5864-96f2-4b1ee18d44a1",
+          "arrival_offset_s": 2173,
+          "departure_offset_s": 2193
+        },
+        {
+          "stop_id": "4646132a-60ea-592b-a844-74b4403146fb",
+          "arrival_offset_s": 2353,
+          "departure_offset_s": 2373
+        },
+        {
+          "stop_id": "57aebdbb-ec5d-5185-8dcf-dda502e8bc87",
+          "arrival_offset_s": 2443,
+          "departure_offset_s": 2463
+        },
+        {
+          "stop_id": "bd381069-16d2-5861-b33f-7cb51c0a4dc3",
+          "arrival_offset_s": 2603,
+          "departure_offset_s": 2623
+        },
+        {
+          "stop_id": "2103c6d6-c64f-5ee6-a8d6-8719a68b1c5a",
+          "arrival_offset_s": 2763,
+          "departure_offset_s": 2783
+        },
+        {
+          "stop_id": "1d1afad2-5ddd-5057-adb4-bfe29b7b6d70",
+          "arrival_offset_s": 2833,
+          "departure_offset_s": 2853
+        },
+        {
+          "stop_id": "580306ea-42e2-50ed-b643-507312418cb6",
+          "arrival_offset_s": 3003,
+          "departure_offset_s": 3023
+        },
+        {
+          "stop_id": "1184fbd9-00a4-54cd-8dba-70bc7f8bda83",
+          "arrival_offset_s": 3083,
+          "departure_offset_s": 3103
+        },
+        {
+          "stop_id": "b7783fda-707f-5d48-aa4b-78739826ad21",
+          "arrival_offset_s": 3213,
+          "departure_offset_s": 3233
+        },
+        {
+          "stop_id": "36969e8f-6c58-5e3c-b798-81324b1142dc",
+          "arrival_offset_s": 3343,
+          "departure_offset_s": 3363
+        },
+        {
+          "stop_id": "c46de208-1ceb-5ada-8496-f98e977effc4",
+          "arrival_offset_s": 3493,
+          "departure_offset_s": 3493
+        }
+      ],
+      "source": "https://www.cda.gov.pk/Assets/metro_transit_route/FR-01_Backward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "This is ONE real, officially-published trip pattern (stop-level arrival/departure offsets, seconds from trip start) taken verbatim from the cited CDA PDF. Multiple consecutive trips on that PDF were checked and confirmed to be EXACT time-shifts of this same pattern by 'headway_min' - so every real trip for this route/direction/day can be reconstructed by repeating this pattern every headway_min minutes from first_trip_start to last_trip_start (total_trips_per_day trips), without inventing any new stop-level timing."
+    },
+    {
+      "id": "7f4539c0-78ee-5bf7-a670-4a1a6fbc5433",
+      "route_id": "0a0217f7-3683-5df2-8ef4-8468d5755364",
+      "kind": "CANONICAL_PATTERN",
+      "gtfs_route_id_on_pdf": "10004",
+      "direction": "Forward",
+      "canonical_trip_id_on_pdf": "175157-0",
+      "canonical_trip_start_time": "06:00:00",
+      "headway_min": 10,
+      "total_trips_per_day": 97,
+      "first_trip_start": "06:00:00",
+      "last_trip_start": "22:00:00",
+      "stop_times": [
+        {
+          "stop_id": "2ccff938-6448-518b-ba16-eb90fa65d2cf",
+          "arrival_offset_s": 0,
+          "departure_offset_s": 0
+        },
+        {
+          "stop_id": "098c9839-0582-5673-83da-0fd4b30436c5",
+          "arrival_offset_s": 124,
+          "departure_offset_s": 144
+        },
+        {
+          "stop_id": "68870edf-7347-512c-b645-2a6f31f175d2",
+          "arrival_offset_s": 252,
+          "departure_offset_s": 272
+        },
+        {
+          "stop_id": "ea113d71-680a-5543-9b76-98073340a97e",
+          "arrival_offset_s": 377,
+          "departure_offset_s": 397
+        },
+        {
+          "stop_id": "36c1cbd5-7812-5241-b783-aa59374ba557",
+          "arrival_offset_s": 487,
+          "departure_offset_s": 507
+        },
+        {
+          "stop_id": "3665df75-ced5-55bb-99c1-f49c3443edc4",
+          "arrival_offset_s": 615,
+          "departure_offset_s": 635
+        },
+        {
+          "stop_id": "27e00af3-03b4-5581-b453-2bc7e0e1ec3d",
+          "arrival_offset_s": 787,
+          "departure_offset_s": 807
+        },
+        {
+          "stop_id": "5cc9ab6b-23c9-59d3-b1d0-ae383b6f13dd",
+          "arrival_offset_s": 915,
+          "departure_offset_s": 935
+        },
+        {
+          "stop_id": "afa17d79-815d-5cd8-8af6-57673aec67fb",
+          "arrival_offset_s": 1129,
+          "departure_offset_s": 1149
+        },
+        {
+          "stop_id": "1fd03a94-33a3-5a9a-832d-225a3f1328a4",
+          "arrival_offset_s": 1257,
+          "departure_offset_s": 1277
+        },
+        {
+          "stop_id": "fceaa920-7777-57be-b912-971c9f3827de",
+          "arrival_offset_s": 1427,
+          "departure_offset_s": 1447
+        },
+        {
+          "stop_id": "cdf509c4-6510-5396-9a95-31b21c1ef15b",
+          "arrival_offset_s": 1567,
+          "departure_offset_s": 1587
+        },
+        {
+          "stop_id": "54a302c8-ff6a-5cee-b01f-7a144ffbb5a7",
+          "arrival_offset_s": 1847,
+          "departure_offset_s": 1867
+        },
+        {
+          "stop_id": "227e8199-8915-59c1-8525-06f30f32f8b4",
+          "arrival_offset_s": 1966,
+          "departure_offset_s": 1986
+        },
+        {
+          "stop_id": "a9b68f7c-a75b-5030-8918-318dad7b741f",
+          "arrival_offset_s": 2016,
+          "departure_offset_s": 2036
+        },
+        {
+          "stop_id": "46e3db25-443b-5731-93c2-bcc84eb43122",
+          "arrival_offset_s": 2096,
+          "departure_offset_s": 2116
+        },
+        {
+          "stop_id": "72846db0-92a2-52e8-aa6b-97cd09c83956",
+          "arrival_offset_s": 2176,
+          "departure_offset_s": 2196
+        },
+        {
+          "stop_id": "39187591-5114-5330-8173-3623c7181a6b",
+          "arrival_offset_s": 2434,
+          "departure_offset_s": 2454
+        },
+        {
+          "stop_id": "f60df439-1f76-52a0-9b09-628b73c91d25",
+          "arrival_offset_s": 2536,
+          "departure_offset_s": 2556
+        },
+        {
+          "stop_id": "e04c6999-5b1a-5252-a6f4-66e1bf554c7c",
+          "arrival_offset_s": 2636,
+          "departure_offset_s": 2656
+        },
+        {
+          "stop_id": "645b095f-c45f-5f6a-9ca3-b8579ac58dce",
+          "arrival_offset_s": 2691,
+          "departure_offset_s": 2711
+        },
+        {
+          "stop_id": "faee46e4-2b81-5a35-a465-c1fcea3b124b",
+          "arrival_offset_s": 2845,
+          "departure_offset_s": 2865
+        },
+        {
+          "stop_id": "70548d35-a148-5760-9c8d-ecdf58555de2",
+          "arrival_offset_s": 2967,
+          "departure_offset_s": 2987
+        },
+        {
+          "stop_id": "29a6d144-5e62-5433-be70-b345857bb5c4",
+          "arrival_offset_s": 3067,
+          "departure_offset_s": 3087
+        },
+        {
+          "stop_id": "84ff49f7-6777-53ae-a846-5431f5e6e6b3",
+          "arrival_offset_s": 3335,
+          "departure_offset_s": 3335
+        }
+      ],
+      "source": "https://www.cda.gov.pk/Assets/metro_transit_route/FR-04_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "This is ONE real, officially-published trip pattern (stop-level arrival/departure offsets, seconds from trip start) taken verbatim from the cited CDA PDF. Multiple consecutive trips on that PDF were checked and confirmed to be EXACT time-shifts of this same pattern by 'headway_min' - so every real trip for this route/direction/day can be reconstructed by repeating this pattern every headway_min minutes from first_trip_start to last_trip_start (total_trips_per_day trips), without inventing any new stop-level timing."
+    },
+    {
+      "id": "b625ba2f-577d-58d7-adee-aa25168e7c9c",
+      "route_id": "1ce08d52-fc4c-5537-a10c-788784c25578",
+      "kind": "CANONICAL_PATTERN",
+      "gtfs_route_id_on_pdf": "10007",
+      "direction": "Forward",
+      "canonical_trip_id_on_pdf": "175060-0",
+      "canonical_trip_start_time": "06:00:00",
+      "headway_min": 10,
+      "total_trips_per_day": 97,
+      "first_trip_start": "06:00:00",
+      "last_trip_start": "22:00:00",
+      "stop_times": [
+        {
+          "stop_id": "2ccff938-6448-518b-ba16-eb90fa65d2cf",
+          "arrival_offset_s": 0,
+          "departure_offset_s": 0
+        },
+        {
+          "stop_id": "098c9839-0582-5673-83da-0fd4b30436c5",
+          "arrival_offset_s": 60,
+          "departure_offset_s": 80
+        },
+        {
+          "stop_id": "e881fa2b-c63b-5101-8beb-50798ea327e7",
+          "arrival_offset_s": 239,
+          "departure_offset_s": 259
+        },
+        {
+          "stop_id": "5b00700d-2d47-5a1d-b300-ce4aeb105942",
+          "arrival_offset_s": 379,
+          "departure_offset_s": 399
+        },
+        {
+          "stop_id": "88b8b763-149c-55c5-9a2a-d659b3a3b29d",
+          "arrival_offset_s": 409,
+          "departure_offset_s": 419
+        },
+        {
+          "stop_id": "facdba12-84ae-5df5-bc82-3de238c0dd06",
+          "arrival_offset_s": 439,
+          "departure_offset_s": 459
+        },
+        {
+          "stop_id": "42a5f0f6-82c8-50a0-aa6e-303bb4a66495",
+          "arrival_offset_s": 568,
+          "departure_offset_s": 588
+        },
+        {
+          "stop_id": "5f8460a6-2ea8-5e13-8555-3aa983d6244f",
+          "arrival_offset_s": 684,
+          "departure_offset_s": 704
+        },
+        {
+          "stop_id": "524418c1-1f45-594d-9e11-ffcbd5cd5bd1",
+          "arrival_offset_s": 804,
+          "departure_offset_s": 824
+        },
+        {
+          "stop_id": "82be220b-ef31-552c-99de-1b1b1c693d79",
+          "arrival_offset_s": 874,
+          "departure_offset_s": 894
+        },
+        {
+          "stop_id": "cfa50cd6-764c-5b98-b958-d2ec3a4d0660",
+          "arrival_offset_s": 989,
+          "departure_offset_s": 1009
+        },
+        {
+          "stop_id": "d0a88f81-81d0-5e2f-9bfb-93993e98dbfe",
+          "arrival_offset_s": 1159,
+          "departure_offset_s": 1179
+        },
+        {
+          "stop_id": "72e8bbc1-42bc-5d85-ab0e-babc88a97aee",
+          "arrival_offset_s": 1329,
+          "departure_offset_s": 1349
+        },
+        {
+          "stop_id": "a2a2e798-07fa-541e-8776-b746be259cd0",
+          "arrival_offset_s": 1499,
+          "departure_offset_s": 1519
+        },
+        {
+          "stop_id": "d9ba95d4-a20b-538b-8210-c49dd683b34d",
+          "arrival_offset_s": 1569,
+          "departure_offset_s": 1589
+        },
+        {
+          "stop_id": "566cad4b-37e6-5055-bda2-59509ca25a32",
+          "arrival_offset_s": 1639,
+          "departure_offset_s": 1659
+        },
+        {
+          "stop_id": "070305f4-6565-5fad-b136-f8ce5be6b0a9",
+          "arrival_offset_s": 1714,
+          "departure_offset_s": 1734
+        },
+        {
+          "stop_id": "0590d806-e74c-5b4e-a689-f752d680dbef",
+          "arrival_offset_s": 1824,
+          "departure_offset_s": 1844
+        },
+        {
+          "stop_id": "56ac0440-f061-5efc-9aab-9249a990b9d1",
+          "arrival_offset_s": 2066,
+          "departure_offset_s": 2086
+        },
+        {
+          "stop_id": "c46de208-1ceb-5ada-8496-f98e977effc4",
+          "arrival_offset_s": 2410,
+          "departure_offset_s": 2430
+        },
+        {
+          "stop_id": "c15457a4-5e26-5db3-831d-00823075992b",
+          "arrival_offset_s": 2560,
+          "departure_offset_s": 2580
+        },
+        {
+          "stop_id": "de12ec6f-78aa-5842-9e1a-f71f77f0ab04",
+          "arrival_offset_s": 2630,
+          "departure_offset_s": 2650
+        },
+        {
+          "stop_id": "36969e8f-6c58-5e3c-b798-81324b1142dc",
+          "arrival_offset_s": 2840,
+          "departure_offset_s": 2840
+        }
+      ],
+      "source": "https://www.cda.gov.pk/Assets/metro_transit_route/FR-07_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "This is ONE real, officially-published trip pattern (stop-level arrival/departure offsets, seconds from trip start) taken verbatim from the cited CDA PDF. Multiple consecutive trips on that PDF were checked and confirmed to be EXACT time-shifts of this same pattern by 'headway_min' - so every real trip for this route/direction/day can be reconstructed by repeating this pattern every headway_min minutes from first_trip_start to last_trip_start (total_trips_per_day trips), without inventing any new stop-level timing."
+    },
+    {
+      "id": "01350cf8-c1d1-5b96-b4c3-564450bf1353",
+      "route_id": "2d82c1c4-c3c7-5267-a454-c096d6bec25c",
+      "kind": "CANONICAL_PATTERN",
+      "gtfs_route_id_on_pdf": "10014",
+      "direction": "Forward",
+      "canonical_trip_id_on_pdf": "175446-0",
+      "canonical_trip_start_time": "06:00:00",
+      "headway_min": 15,
+      "total_trips_per_day": 65,
+      "first_trip_start": "06:00:00",
+      "last_trip_start": null,
+      "stop_times": [
+        {
+          "stop_id": "ed3993bf-6dbe-5757-8e5a-b0c1ce9e192f",
+          "arrival_offset_s": 0,
+          "departure_offset_s": 0
+        },
+        {
+          "stop_id": "aac766f0-ca86-5002-a387-8ccbda5969dc",
+          "arrival_offset_s": 130,
+          "departure_offset_s": 150
+        },
+        {
+          "stop_id": "77b68057-ab55-5291-885c-d629bbf1f8cb",
+          "arrival_offset_s": 290,
+          "departure_offset_s": 310
+        },
+        {
+          "stop_id": "5a2eb3f0-caa1-5ddd-906a-aecb0a311b6e",
+          "arrival_offset_s": 435,
+          "departure_offset_s": 455
+        },
+        {
+          "stop_id": "1af489f8-023d-570d-9225-7444a8ceee84",
+          "arrival_offset_s": 675,
+          "departure_offset_s": 695
+        },
+        {
+          "stop_id": "967e2bf6-0255-5c08-9b84-1281d5be8fa3",
+          "arrival_offset_s": 766,
+          "departure_offset_s": 786
+        },
+        {
+          "stop_id": "f0bcb7f0-02f5-5f3a-b661-363528cab0eb",
+          "arrival_offset_s": 946,
+          "departure_offset_s": 966
+        },
+        {
+          "stop_id": "e02292c8-e19c-51c1-96b4-e06bc836d418",
+          "arrival_offset_s": 1096,
+          "departure_offset_s": 1116
+        },
+        {
+          "stop_id": "9ad66849-a6bd-5b20-835a-de16101c2063",
+          "arrival_offset_s": 1226,
+          "departure_offset_s": 1246
+        },
+        {
+          "stop_id": "41580978-14f9-5718-9691-0c46c666d3ff",
+          "arrival_offset_s": 1386,
+          "departure_offset_s": 1406
+        },
+        {
+          "stop_id": "49fba4a8-ffff-5890-9417-1c25931c1bd0",
+          "arrival_offset_s": 1806,
+          "departure_offset_s": 1826
+        },
+        {
+          "stop_id": "97673faf-d1c4-5fb5-bcc7-2b0db3ff5157",
+          "arrival_offset_s": 2046,
+          "departure_offset_s": 2066
+        },
+        {
+          "stop_id": "8916895d-28ea-5bbb-86c5-e29642eae79f",
+          "arrival_offset_s": 2306,
+          "departure_offset_s": 2326
+        },
+        {
+          "stop_id": "a08198e3-bbb2-5626-9942-879cad59cb2a",
+          "arrival_offset_s": 2556,
+          "departure_offset_s": 2576
+        },
+        {
+          "stop_id": "4584de61-d4df-598d-816b-e21a2f7c8865",
+          "arrival_offset_s": 2645,
+          "departure_offset_s": 2666
+        },
+        {
+          "stop_id": "928dfbbf-f866-5c62-8cac-a9e792880e49",
+          "arrival_offset_s": 2742,
+          "departure_offset_s": 2762
+        },
+        {
+          "stop_id": "901f8784-3b4a-518b-89c8-5fa205564696",
+          "arrival_offset_s": 2875,
+          "departure_offset_s": null
+        },
+        {
+          "stop_id": "4646132a-60ea-592b-a844-74b4403146fb",
+          "arrival_offset_s": 3180,
+          "departure_offset_s": 3180
+        }
+      ],
+      "source": "https://www.cda.gov.pk/Assets/metro_transit_route/FR-14_Forward.pdf",
+      "confidence": "OFFICIAL",
+      "notes": "This is ONE real, officially-published trip pattern (stop-level arrival/departure offsets, seconds from trip start) taken verbatim from the cited CDA PDF. Multiple consecutive trips on that PDF were checked and confirmed to be EXACT time-shifts of this same pattern by 'headway_min' - so every real trip for this route/direction/day can be reconstructed by repeating this pattern every headway_min minutes from first_trip_start to last_trip_start (total_trips_per_day trips), without inventing any new stop-level timing. Intermediate departure time for 'CDA Stop' was truncated in the fetched extract; recorded as UNKNOWN (None) rather than guessed."
+    }
+  ],
+  "stop_times": [],
+  "transfers": [
+    {
+      "id": "56d5cfa0-8120-5c6d-8dd3-eff4668022c1",
+      "kind": "same_agency_note",
+      "description": "'Faizabad' and 'Faiz Ahmed Faiz' are TWO DIFFERENT Red Line stations (see stops list) - do not merge them. 'Faiz Ahmed Faiz' is the stop confirmed elsewhere as the Red<->Orange Line interchange.",
+      "stop_ids": [
+        "2359f716-fd8d-503d-b87d-01b6cf4faaea",
+        "ecc1b302-a6ff-5067-816a-ba59498a66cd"
+      ],
+      "source": "Wikipedia (interchange note) cross-checked against rehbar.pk ordered station list",
+      "confidence": "VERIFIED"
+    },
+    {
+      "id": "2ae2b4a5-bb52-5576-b0e9-f784183485ff",
+      "kind": "same_stop_interchange",
+      "description": "Red Line <-> Orange Line interchange at Faiz Ahmed Faiz station.",
+      "stop_ids": [
+        "ecc1b302-a6ff-5067-816a-ba59498a66cd"
+      ],
+      "route_ids": [
+        "d3cc5779-551f-57f4-9dd5-d10989acdb29",
+        "890d30f3-fc9a-5610-abe4-554545c46b9b"
+      ],
+      "source": "Wikipedia: Rawalpindi-Islamabad Metrobus (article text)",
+      "confidence": "VERIFIED"
+    }
+  ]
+}
