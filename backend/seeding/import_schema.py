@@ -29,6 +29,14 @@ whose coordinates are not established (they are filled by a later
 geospatial-enrichment pass, not fabricated at import time) - see
 `docs/transit_data.json` and `plan.md` section B.
 
+`ImportStop.confidence` carries the source dataset's own confidence
+rating for a stop that DOES have coordinates (`"APPROXIMATE"` for all 17
+of `transit_data.json`'s located stops today). `seeding.importer` copies
+it onto `Stop.coordinate_source`/`coordinate_confidence` only when
+creating a stop that has a location - see `plan.md` section C and
+`seeding.geocoding` for how the remaining null-coordinate stops get
+their provenance filled in later (Phase 2).
+
 A route's `agency` field is an agency *name* (matched case-sensitively
 against `agencies[].name`, or auto-created if not listed there - see
 `importer.py`), not a `ref` into the agencies list - agencies don't need
@@ -53,6 +61,7 @@ class ImportStop:
     name: str
     latitude: float | None = None
     longitude: float | None = None
+    confidence: str | None = None
 
 
 @dataclass(frozen=True)

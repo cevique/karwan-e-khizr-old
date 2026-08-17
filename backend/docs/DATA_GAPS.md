@@ -293,6 +293,35 @@ Markaz", "NUST Metro Station", "Bar Council") that a geocoding pass or manual OS
 lookup could reasonably place, but that work was not done in this research pass and
 must not be silently assumed done.
 
+### 7.1 UPDATE (Phase 2, plan.md section C) — geocoding completed (2026-08-17)
+
+The backend has a dedicated geocoding pipeline: `backend/seeding/geocoding.py`
+(a `NominatimGeocoder` wrapping OpenStreetMap's public Nominatim `/search` endpoint,
+rate-limited to 1 req/sec per Nominatim's usage policy, results validated against the
+33.5–33.85N / 73.0–73.3E Islamabad/Rawalpindi bounding box before being accepted) and
+`backend/scripts/geocode_stops.py` (the CLI that runs it against every `Stop` row with
+`location IS NULL`). `Stop.coordinate_source` / `coordinate_confidence` (added by
+migration `c3d4e5f6a7b8`) record the outcome per stop.
+
+**Geocoding was run against the live 105 null-coordinate stops on 2026-08-17.**
+Results:
+- **71 stops resolved** — tagged `coordinate_source="NOMINATIM"`,
+  `coordinate_confidence="APPROXIMATE"`. All within the Islamabad/Rawalpindi bounding
+  box.
+- **34 stops unresolved** — tagged `coordinate_confidence="UNKNOWN"`, location left
+  `NULL`. These are stop names that Nominatim could not resolve to an in-bounds match
+  (e.g. "Abpara Market", "Bar Council", "College Morh", "Metro CNG", "Zia Masjid").
+  Most are either informal/colloquial names not in OSM, or "Metro Station" suffixed
+  names where Nominatim has the underlying place but not the transit-stop-specific name.
+- **17 SEED_DATUM stops** — unchanged, coordinates untouched. Their
+  `coordinate_source="SEED_DATUM"` and `coordinate_confidence="APPROXIMATE"` were
+  set at import time.
+- **Total: 88 of 122 stops now have coordinates** (72%). 34 remain without.
+
+After geocoding, the routing graph builds with 88 nodes (up from 17 before geocoding).
+The 34 unresolved stops are skipped by the graph (they have no location) and by the
+simulator (same guard).
+
 ## 8. What OpenCode must not assume
 
 - Must not assume the existing seed dataset's route structure ("blue line" =
@@ -324,3 +353,7 @@ must not be silently assumed done.
   per-route in each route's `notes` field) before they can be simulated realistically.
 - Must not assume the Red/Orange/Blue/Green Metrobus lines now have stop-level
   timetables just because the feeder network does — they still don't (§1).
+- The geocoding pipeline built in Phase 2 (§7.1) has been run. 88 of 122 stops now
+  have coordinates (17 SEED_DATUM + 71 NOMINATIM). 34 stops remain `UNKNOWN` (null
+  location) — mostly informal stop names not in OSM. Do not fabricate coordinates for
+  them.

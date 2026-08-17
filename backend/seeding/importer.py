@@ -171,6 +171,7 @@ async def _get_or_create_stop(
     name: str,
     latitude: float | None,
     longitude: float | None,
+    confidence: str | None,
     report: ImportReport,
 ) -> Stop:
     # Match by the stable dataset `ref` when present (the canonical
@@ -218,7 +219,20 @@ async def _get_or_create_stop(
         if existing.ref is None and ref is not None:
             existing.ref = ref
         return existing
-    stop = Stop(ref=ref, name=name, location=location)
+    # Provenance (plan.md section C, Phase 2): a stop created WITH a
+    # location came straight from this import dataset, so it's tagged
+    # "SEED_DATUM" with whatever confidence the dataset itself carries.
+    # A stop created without one is left with no provenance at all -
+    # `seeding.geocoding` is what fills `coordinate_source`/
+    # `coordinate_confidence` in later, once it actually finds (or fails
+    # to find) coordinates for it.
+    stop = Stop(
+        ref=ref,
+        name=name,
+        location=location,
+        coordinate_source="SEED_DATUM" if location is not None else None,
+        coordinate_confidence=confidence if location is not None else None,
+    )
     session.add(stop)
     await session.flush()
     report.stops_created += 1
@@ -360,6 +374,7 @@ async def import_dataset(
                 import_stop.name,
                 import_stop.latitude,
                 import_stop.longitude,
+                import_stop.confidence,
                 report,
             )
 

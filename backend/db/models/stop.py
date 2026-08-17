@@ -63,6 +63,29 @@ class Stop(TimestampMixin, Base):
         nullable=True,
     )
 
+    # Provenance for `location` (plan.md section C, Phase 2 - Geospatial
+    # Enrichment). Both nullable: rows imported before this column existed,
+    # and stops still awaiting enrichment, carry no provenance yet.
+    #
+    # coordinate_source: how the coordinate was obtained.
+    #   "SEED_DATUM"  - came with the import dataset itself
+    #                   (docs/transit_data.json's 17 APPROXIMATE stops)
+    #   "NOMINATIM"   - filled in later by `scripts/geocode_stops.py`
+    #                   (`seeding.geocoding`) querying OpenStreetMap
+    #   "MANUAL_VERIFIED" - hand-entered/corrected by a human (not
+    #                   produced by any code in this repo yet)
+    #   null          - unknown/not yet set
+    coordinate_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # coordinate_confidence: how much to trust `location`.
+    #   "OFFICIAL" / "VERIFIED" / "APPROXIMATE" / "RECONSTRUCTED" - carried
+    #     from the source dataset's own confidence rating (or set to
+    #     "APPROXIMATE" for a successful Nominatim match)
+    #   "UNKNOWN"     - geocoding was attempted and found no in-bounds
+    #                   match; `location` stays NULL
+    #   null          - not yet assessed (location also still NULL)
+    coordinate_confidence: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     route_stops: Mapped[list["RouteStop"]] = relationship(
         back_populates="stop",
         cascade="all, delete-orphan",

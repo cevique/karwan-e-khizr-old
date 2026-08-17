@@ -16,7 +16,10 @@ Mappings (see `docs/transit_data.json` and `plan.md` section B):
                            `ImportRoute.agency` carries the operator NAME)
 - stops               -> ImportStop  (ref = stop.key; latitude/longitude kept
                            as None when the dataset leaves them null - the
-                           plan forbids fabricating coordinates)
+                           plan forbids fabricating coordinates; confidence
+                           carried through as-is for `seeding.importer` to
+                           copy onto Stop.coordinate_confidence, see plan.md
+                           section C)
 - routes              -> ImportRoute (ref = route.key; `agency` resolved from
                            `route.agency_id` to the operator's NAME, since
                            the importer matches agencies by name)
@@ -91,6 +94,7 @@ def transit_data_to_dataset(document: dict) -> ImportDataset:
             name=stop["name"],
             latitude=stop.get("latitude"),
             longitude=stop.get("longitude"),
+            confidence=stop.get("confidence"),
         )
         for stop in document["stops"]
     )

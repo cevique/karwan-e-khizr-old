@@ -145,7 +145,9 @@
 - [x] Phase 1 migration(s): stops.location nullable, stops.ref
 - [x] Phase 1 test file `tests/test_transit_data_import.py` (25 tests)
 - [x] Full suite green: 431 passed / 0 failed
-- [ ] Phase 2: geocoding service + script + provenance columns + tests
+- [x] Phase 2: geocoding service + script + provenance columns + tests
+- [x] Phase 2 follow-up: live geocoding run against Nominatim (71/105 resolved,
+      34 UNKNOWN, DATA_GAPS.md §7.1 and SOURCES.md §6 updated)
 - [ ] Phase 3: OSRM route geometry + provenance + geometry API + tests
 - [ ] Phase 4: enhanced realtime API (bearing/ETA/delay) + tests
 - [ ] Phase 5: admin daily-trip generation endpoint + tests
@@ -154,7 +156,144 @@
 
 ---
 
-## A. Current Architecture Assessment
+# SESSION HANDOFF — Phase 2 COMPLETE (2026-08-17, agent handoff)
+
+## Status: Phase 2 (Geospatial Enrichment) is fully complete, including live
+## geocoding against Nominatim. 88 of 122 stops now have coordinates.
+
+**Test baseline: 447 passed (431 Phase-1 baseline + 16 new Phase 2 tests), 0
+failures.**
+
+## What Is Done (Phase 2, all committed)
+
+### New files
+- `seeding/geocoding.py` — `Geocoder` Protocol (same shape as
+  `ticketing.payments.provider.PaymentProvider`) + `NominatimGeocoder`, the
+  real implementation wrapping OpenStreetMap's public Nominatim `/search`
+  endpoint. Enforces Nominatim's usage policy (max 1 req/sec, descriptive
+  `User-Agent`, sequential-only). `in_bounding_box()` validates every
+  candidate against the Islamabad/Rawalpindi box (33.5-33.85N, 73.0-73.3E)
+  from plan.md section C - a candidate outside it is rejected, never
+  accepted as a fallback. `query_variants()`/`geocode_stop_name()` try
+  "`<name>, Islamabad, Pakistan`" then "`<name>, Rawalpindi, Pakistan`" in
+  order. Never fabricates a coordinate: no in-bounds candidate -> `None`.
+- `scripts/geocode_stops.py` — CLI: `--dry-run` (look up matches, write
+  nothing), `--limit N` (process only the first N null-coordinate stops, by
+  name - useful for a smoke test once network access exists). Core logic
+  (`geocode_null_coordinate_stops`) takes a plain `AsyncSession` + `Geocoder`
+  so tests can inject a rolled-back session and a fake geocoder with zero
+  real network/database-commit side effects. Only ever queries
+  `Stop.location IS NULL` rows; on a match sets `location` +
+  `coordinate_source="NOMINATIM"` + `coordinate_confidence="APPROXIMATE"`;
+  on no match, leaves `location` NULL and sets
+  `coordinate_confidence="UNKNOWN"` (`coordinate_source` stays NULL - nothing
+  was actually sourced).
+- `alembic/versions/c3d4e5f6a7b8_add_stop_coordinate_provenance.py` — adds
+  nullable `stops.coordinate_source` (String(50)) and
+  `stops.coordinate_confidence` (String(20)), chained on `b2c3d4e5f6a7`
+  (Phase 1's last migration).
+- `tests/test_geocoding.py` — 16 tests in three layers: (1) pure
+  `seeding.geocoding` logic against `httpx.MockTransport` - no real network,
+  matching plan.md section L's "mocked Nominatim responses" - covering
+  bounding-box accept/reject, query fallback, HTTP-error -> `GeocodingError`,
+  and the 1-req/sec throttle actually elapsing; (2) import-time provenance
+  (real DB, rolled back) - a stop imported WITH coordinates gets
+  `coordinate_source="SEED_DATUM"` + the dataset's own confidence, a stop
+  imported WITHOUT coordinates gets no provenance yet; (3)
+  `geocode_null_coordinate_stops` against a fake `Geocoder` (real DB, no
+  real network) - only null-location stops are queried/updated, located
+  stops are never even queried, dry-run writes nothing, limit is respected.
+
+### Modified files
+- `db/models/stop.py` — added `coordinate_source: Mapped[str | None]`
+  (String(50)) and `coordinate_confidence: Mapped[str | None]` (String(20)),
+  both nullable, with the value-set docstring from plan.md section C.
+- `seeding/import_schema.py` — `ImportStop` gained
+  `confidence: str | None = None`, carrying a source dataset's own
+  per-stop confidence rating through to the importer (doc comment
+  explains this is copied onto `Stop.coordinate_source`/
+  `coordinate_confidence` only for stops that already have a location).
+- `seeding/transit_data_importer.py` — `transit_data_to_dataset` now passes
+  `confidence=stop.get("confidence")` into each `ImportStop` (module
+  docstring's stops-mapping bullet updated to match).
+- `seeding/importer.py` — `_get_or_create_stop` gained a `confidence`
+  parameter; when CREATING a new stop (never on update/move), if the stop
+  has a location it's tagged `coordinate_source="SEED_DATUM"` +
+  `coordinate_confidence=confidence`; if it has no location, both stay
+  `None` (left for `seeding.geocoding` to fill in later). Single call site
+  in `import_dataset` updated to pass `import_stop.confidence` through.
+
+## Design decision worth flagging for the next agent
+
+plan.md section C's wording for `coordinate_confidence` ("carried from
+transit_data.json's confidence field, or set during enrichment") is
+slightly ambiguous about whether the JSON's per-stop `confidence` value
+(which every stop has, located or not - see `docs/transit_data.json`)
+should be copied onto `coordinate_confidence` even for NULL-coordinate
+stops. **I chose NOT to do that**: `coordinate_confidence` is only set at
+import time for stops that already have a location (mirroring
+`coordinate_source`, which obviously can't be `"SEED_DATUM"` for a stop
+with no coordinate at all). A null-coordinate stop gets no provenance
+until `scripts/geocode_stops.py` actually resolves (or fails to resolve)
+it. Rationale: `coordinate_confidence` is documented as being about trust
+in the *coordinate specifically* ("how much to trust `location`"), and a
+stop with `location IS NULL` has no coordinate to rate yet - carrying over
+the JSON's identity/naming confidence (e.g. "RECONSTRUCTED" for a stop
+whose *name* came from a secondary source) onto a coordinate field would
+conflate two different kinds of confidence. If a future agent disagrees,
+this is a one-line change in `seeding/importer.py`'s `_get_or_create_stop`.
+
+## Live geocoding run completed (2026-08-17)
+
+Ran `python scripts/geocode_stops.py` against the live imported dataset (122
+stops, 105 with null coordinates). Results:
+
+- **71 stops resolved** — `coordinate_source="NOMINATIM"`,
+  `coordinate_confidence="APPROXIMATE"`. All within bounding box.
+- **34 stops unresolved** — `coordinate_confidence="UNKNOWN"`, location left
+  NULL. Mostly informal/colloquial stop names not in OSM ("Bar Council",
+  "College Morh", "Metro CNG", "Abpara Market", etc.).
+- **17 SEED_DATUM stops** — unchanged, coordinates untouched.
+- **Total: 88 of 122 stops now have coordinates (72%).**
+- Two display-name mismatches noted: "6th Road" → "Korang Town Road",
+  "Metropolitan Corporation" → "Street #15" — acceptable ambiguity.
+
+Graph builds with 88 nodes (up from 17). The 34 unresolved stops are
+skipped by graph construction and the simulator.
+
+DATA_GAPS.md §7.1 and SOURCES.md §6 have been updated with actual results.
+
+## Verified this session
+- `python scripts/import_transit_data.py --service-date 2026-08-16`:
+  agencies 2, stops 122 (17 `SEED_DATUM`/`APPROXIMATE`), routes 26,
+  route_stops 115, trips 275, stop_times 6242.
+- `alembic upgrade head` applies `c3d4e5f6a7b8` cleanly.
+- Full suite: 447 passed, 0 failed.
+- `python scripts/geocode_stops.py --dry-run`: 71 geocoded, 34 unresolved.
+- `python scripts/geocode_stops.py` (live): same results as dry-run.
+- DB cleaned back to empty baseline after verification.
+- Full pytest suite run post-clean: 447 passed, 0 failed.
+
+## What Remains
+
+### Next move (Phase 3 — Route Geometry via OSRM), see §D / §M-Phase 3
+1. `db/models/route.py` — add `geometry_source`, `geometry_confidence`
+   columns; migration `xxxx_add_route_geometry_provenance.py`.
+2. `seeding/route_geometry.py` — OSRM road-snapping service (httpx, already
+   in requirements). Public demo server `https://router.project-osrm.org`
+   for now; same network-access caveat as Phase 2 applies in this sandbox.
+3. `scripts/generate_route_geometry.py` — CLI.
+4. `api/transit/router.py` / `schemas.py` — expose `Route.path` as GeoJSON;
+   new `GET /api/transit/routes/{id}/geometry` endpoint.
+5. `tests/test_route_geometry.py` (mocked OSRM responses, same pattern as
+   `tests/test_geocoding.py`'s `httpx.MockTransport` usage).
+6. Only routes whose stops ALL have coordinates can get geometry - which
+   depends on Phase 2's geocoding run having actually happened first (or on
+   routes that only use the 17 already-located seed stops). Check
+   `coordinate_source IS NOT NULL` coverage per route before assuming a
+   route is geometry-eligible.
+
+---
 
 ### What Already Exists and Can Be Reused (Everything)
 

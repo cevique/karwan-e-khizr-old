@@ -302,3 +302,31 @@ hierarchy in the task ranks them. "Dataset elements depending on it" references
   top-level `README.md`), `backend/data/seed_dataset.py`, `backend/data/README.md`,
   `backend/db/models/*.py`, `backend/simulation/*.py`, `backend/seeding/*.py`,
   `backend/api/transit/**`.
+
+## 6. Geocoding source (Phase 2, plan.md section C) — used 2026-08-17
+
+- **Title:** Nominatim (OpenStreetMap's geocoding service)
+- **Publisher:** OpenStreetMap Foundation
+- **URL:** `https://nominatim.openstreetmap.org/search` (public instance)
+- **Usage policy:** https://operations.osmfoundation.org/policies/nominatim/ — at most
+  1 request/second, descriptive `User-Agent`, no parallel requests. Enforced by
+  `backend/seeding/geocoding.py`'s `NominatimGeocoder`.
+- **Source type:** Free, no-API-key-required, crowd-sourced (OSM) geocoding.
+- **What it's for:** Filling `Stop.location` for the 105 stops `transit_data.json`
+  leaves with `latitude`/`longitude: null` (see DATA_GAPS.md §7), via
+  `backend/scripts/geocode_stops.py`.
+- **Status: RUN on 2026-08-17.** 71 of 105 null-coordinate stops resolved successfully
+  (67.6% hit rate). 34 remain `UNKNOWN` (unresolved names — mostly informal/transit-
+  specific names not in OSM, e.g. "Bar Council", "College Morh", "Metro CNG"). All 71
+  resolved coordinates validated against the Islamabad/Rawalpindi bounding box
+  (33.5–33.85N / 73.0–73.3E). Two resolved names show Nominatim display-name
+  mismatches ("6th Road" → "Korang Town Road", "Metropolitan Corporation" →
+  "Street #15") — acceptable ambiguity for these stop types; coordinates are still
+  plausibly correct.
+- **Reliability:** Good for well-named places (markets, hospitals, landmarks, metro
+  stations). Weaker for informal stop names ("College Morh", "Bar Council") that don't
+  exist as OSM place names. The bounding-box safeguard prevented any wrong-city false
+  positives.
+- **Dataset elements depending on it:** 71 `Stop` records with
+  `coordinate_source="NOMINATIM"`, `coordinate_confidence="APPROXIMATE"`. These stops
+  now have locations and participate in the routing graph and simulator.
