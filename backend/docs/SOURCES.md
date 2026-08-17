@@ -293,6 +293,40 @@ hierarchy in the task ranks them. "Dataset elements depending on it" references
 
 ---
 
+## 4a. Tooling used to derive (not source) route geometry — added this revision
+
+### 4a.1 OSRM public routing server
+- **Title:** OSRM (Open Source Routing Machine) demo server
+- **Publisher:** Project OSRM (community project; the demo server is a free, unauthenticated
+  public instance, not an official transit data source)
+- **URL:** https://router.project-osrm.org (accessed via `seeding/route_geometry.py`'s
+  `OSRMRouteGeometryProvider`; reached live from a Docker-PostGIS environment on
+  2026-08-17 and verified to return valid driving-profile polylines for real
+  Islamabad/Rawalpindi stop coordinates)
+- **Source type:** Third-party routing engine — this is a **tool**, not a transit-data
+  source. It is listed here only because it's now part of the data lineage for any
+  `Route.path` value that ends up `geometry_source: "OSRM"` — see `backend/plan.md`
+  Phase 3.
+- **Information extracted:** Nothing transit-specific. Given an ordered list of stop
+  coordinates, it returns a road-following driving-profile polyline plus per-leg
+  distances. It has no knowledge of, and does not represent, the real bus routes'
+  actual lane/alignment (see MAP_AND_REALTIME_RECOMMENDATIONS.md §A.2) — it just finds
+  a plausible driving path between points on the general road network.
+- **Reliability:** Not applicable in the usual sense — it's not asserting a transit
+  fact, it's computing a road path. Its output quality depends entirely on OSM's own
+  road-network completeness/accuracy for Islamabad/Rawalpindi, which was not
+  separately audited.
+- **Currentness:** Not applicable (a live routing service, not a dated document).
+- **Limitation (explicit, since this is a very different kind of source from
+  everything else in this file):** the free public demo server has no SLA, may be
+  rate-limited or slow, and is explicitly documented (in
+  `seeding/route_geometry.py` and MAP_AND_REALTIME_RECOMMENDATIONS.md §A.1) as
+  appropriate only for a one-time, offline, build-time enrichment script — not for
+  any runtime/per-request use.
+- **Dataset elements depending on it:** none yet in `transit_data.json` itself (which
+  remains a static research artifact); this is a live-database-only dependency, tracked
+  in `backend/plan.md`'s Phase 3 handoff, not in this file's dataset.
+
 ## 5. Repository (primary source for architecture facts, not transit facts)
 
 - **Karwan-e-Khizr backend repository** (`karwan-e-khizr-main.zip`, as provided).

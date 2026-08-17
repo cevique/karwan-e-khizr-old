@@ -295,6 +295,253 @@ DATA_GAPS.md §7.1 and SOURCES.md §6 have been updated with actual results.
 
 ---
 
+# SESSION HANDOFF — Phase 3 COMPLETE (2026-08-17, agent handoff)
+
+## Status: Phase 3 (Route Geometry via OSRM) is code-complete. Live OSRM
+## generation WAS run and verified on 2026-08-17 (verification/integration agent)
+## — see the "Verification Agent Handoff" section below. The mechanism works
+## end-to-end against real OSRM + PostGIS, but generated geometry for ZERO real
+## routes: after Phase 2's geocoding, no route's full ordered stop sequence is
+## located, and the script correctly never fabricates a line for an unlocated stop.
+
+**Test baseline this session: 8 new pure tests passed + 9 new DB-backed
+tests correctly SKIPPED (no live Postgres reachable here). Full suite:
+220 passed, 242 skipped, 2 pre-existing DB-connection failures unrelated
+to this change (same 2 fail identically on the pre-Phase-3 tree - they
+require a live DB this sandbox doesn't have). 464 tests collected total
+(447 Phase-2 baseline + 17 new Phase 3 tests).**
+
+## What Is Done (Phase 3, all in this session's tree — not yet run live)
+
+### New files
+- `seeding/route_geometry.py` — `RouteGeometryProvider` Protocol (same
+  shape as `seeding.geocoding.Geocoder`) + `OSRMRouteGeometryProvider`,
+  wrapping OSRM's public demo server's `route` service (`driving`
+  profile, `overview=full&geometries=geojson`) via the *plain* `route`
+  endpoint (not `trip`/TSP) so waypoints are never reordered — a transit
+  route's stop sequence is fixed. `RouteGeometryResult` carries
+  `coordinates` (GeoJSON/WKT `(lon, lat)` order — the one place in this
+  codebase that's `(lon, lat)` instead of the usual `(lat, lon)`, called
+  out explicitly in the docstring) and `leg_distances_m` (one per
+  consecutive waypoint pair, from OSRM's own per-leg road distance, not
+  Haversine). `cumulative_distances_m()` turns leg distances into
+  per-stop `distance_along_route_m` values (starts at 0.0, one more entry
+  than legs). `linestring_wkt()` builds the `SRID=4326;LINESTRING(...)`
+  string assigned directly to `Route.path`, mirroring how
+  `seeding.importer` already assigns `Stop.location` as a WKT string.
+  Never fabricates: a route OSRM can't connect raises `RouteGeometryError`
+  rather than returning a straight-line/guessed polyline.
+- `scripts/generate_route_geometry.py` — CLI: `--dry-run`, `--limit N`.
+  Core logic `generate_route_geometry(session, provider, *, dry_run,
+  limit)` takes a plain `AsyncSession` + `RouteGeometryProvider` (same
+  test-injection pattern as `scripts.geocode_stops
+  .geocode_null_coordinate_stops`). `_eligible_routes()` finds every
+  Route with >=2 `RouteStop`s where **every** stop in the sequence has a
+  non-null `location` (extracted via `ST_X`/`ST_Y`, same pattern as
+  `api/transit/router.py`); a route with even one unlocated stop is
+  skipped entirely — untouched, not marked UNKNOWN, since it was never
+  actually attempted. On success: `Route.path` = WKT LineString,
+  `geometry_source="OSRM"`, `geometry_confidence="OSM-DERIVED"`, and each
+  `RouteStop.distance_along_route_m` is overwritten from the cumulative
+  OSRM leg distances. On OSRM failure for an eligible route:
+  `geometry_confidence="UNKNOWN"`, `path`/`geometry_source` left
+  untouched (nothing was actually sourced — same asymmetry as
+  `geocode_stops.py`'s handling of `coordinate_source` on a failed
+  geocode).
+- `alembic/versions/d4e5f6a7b8c9_add_route_geometry_provenance.py` — adds
+  nullable `routes.geometry_source` (String(50)) and
+  `routes.geometry_confidence` (String(20)), chained on `c3d4e5f6a7b8`
+  (Phase 2's head).
+- `tests/test_route_geometry.py` — 17 tests in three layers (mirrors
+  `tests/test_geocoding.py`'s structure exactly): (1) pure
+  `linestring_wkt`/`cumulative_distances_m` + `OSRMRouteGeometryProvider`
+  against `httpx.MockTransport` — 8 tests, all passing in this sandbox
+  with no network; (2) `generate_route_geometry` against a fake
+  `RouteGeometryProvider` (real DB, no real network) — eligibility
+  (>=2 stops all located; single-stop and unlocated-stop routes both
+  skip with `eligible` not incremented), success path (path/provenance/
+  distance-per-stop all correct), failure path (`UNKNOWN`, nothing else
+  touched), `--dry-run`, `--limit` — 6 tests; (3) API —
+  `GET /transit/routes/{id}` embeds a null geometry before generation,
+  `GET /transit/routes/{id}/geometry` returns the generated GeoJSON
+  LineString after it, both endpoints agree, 404 for a missing route — 3
+  tests. All 9 DB-backed tests SKIP (not fail) in this sandbox, same
+  convention as every other DB-backed test file.
+
+### Modified files
+- `db/models/route.py` — added `geometry_source`/`geometry_confidence`
+  columns, same shape/docstring convention as `Stop.coordinate_source`/
+  `coordinate_confidence`.
+- `api/transit/schemas.py` — new `RouteGeometryRead` (GeoJSON-shaped:
+  `type`, `coordinates` as `list[tuple[float, float]] | None`,
+  `geometry_source`, `geometry_confidence` — explicitly all-null before
+  generation, not an error/omitted field); `RouteDetail` gained a
+  required `geometry: RouteGeometryRead` field.
+- `api/transit/router.py` — module docstring's "`Route.path` is
+  intentionally NOT serialized" paragraph is now the opposite (it IS,
+  as of Phase 3) — updated in place. New `_route_geometry_json_expr()`
+  (`ST_AsGeoJSON(cast(Route.path, Geometry))`, same extraction pattern as
+  the existing lat/lng helpers) and `_route_geometry_read()` builder.
+  `get_route` now also selects that expression and populates
+  `RouteDetail.geometry`. New endpoint `GET /transit/routes/{route_id}/
+  geometry` returning just `RouteGeometryRead` (404 if the route doesn't
+  exist), for a client that only needs to redraw the polyline.
+
+## Why nothing was run live this session
+
+This sandbox has **no live PostgreSQL** (no `docker`, no reachable
+`localhost:5432`) and **no outbound network access to
+`router.project-osrm.org`** (egress here is allow-listed to package
+registries only — see the environment's own network-configuration note,
+same restriction Phase 2's live-geocoding run explicitly worked around by
+running from a different environment). Everything that COULD be verified
+without those was: `python -m py_compile` on every new/changed file,
+`pytest --collect-only` (464 tests collect with zero import errors), the
+full suite run (220 passed / 242 skipped / 2 pre-existing unrelated DB
+-connection failures, identical failure signature before and after this
+change), and all 8 pure (mocked-HTTP) `test_route_geometry.py` tests
+passing outright.
+
+## What Remains
+
+### DONE — run this live, from an environment with DB + `router.project-osrm.org` access
+(executed 2026-08-17 by the verification/integration agent; see the next
+section for the full write-up):
+
+```
+alembic upgrade head          # applies d4e5f6a7b8c9
+python scripts/import_transit_data.py --service-date <today>
+python scripts/geocode_stops.py                 # if not already run for this DB
+python scripts/generate_route_geometry.py --dry-run   # sanity check first
+python scripts/generate_route_geometry.py              # live
+```
+
+The dry-run and live runs both reported **0 eligible routes** — the
+correct, honest outcome given that no route's full stop sequence is
+located (Red Line is 1 stop short; FR-01/04/07/14 are 10/4/9/10 short).
+The OSRM provider and persistence pipeline were verified end-to-end on a
+throwaway two-stop route built from real located stops (geometry generated,
+stored to PostGIS, provenance + per-stop distances correct, idempotent,
+dry-run writes nothing, limit works) and the throwaway route was deleted
+afterward. The database was cleaned back to the empty pytest baseline
+after verification.
+
+### Later phases (see §M, unchanged)
+- **Phase 4** Enhanced realtime API (bearing, stop names, ETA, delay) +
+  optional `Route.path` interpolation in `simulation/engine.py`.
+- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint.
+- **Phase 6** Frontend contract finalization (route geometry in journey
+  legs — `RouteGeometryRead` is already in the right shape for this to
+  reuse directly, not a new schema — CORS, documented response shapes).
+
+### Known open items / thinking
+- `generate_route_geometry`'s `--limit` semantics match `geocode_stops
+  .py`'s: "the first N *eligible* candidates" (ordered by `short_name`),
+  not "the first N routes overall" — a route skipped for having an
+  unlocated stop doesn't count against the limit.
+- Re-running `generate_route_geometry.py` on a route that already has
+  OSRM-derived geometry **overwrites** it unconditionally (no "don't
+  touch existing geometry" guard, unlike `geocode_stops.py`'s stop
+  coordinates). This is deliberate: unlike a stop's SEED_DATUM coordinate
+  (a real, curated fact worth protecting), OSRM geometry is fully
+  re-derivable from the same inputs every time — there is no
+  higher-trust source to accidentally clobber yet. If `geometry_source`
+  is ever `"MANUAL_VERIFIED"` (not produced by any code today), a future
+  agent should add the same protect-existing-higher-trust-source guard
+  `_get_or_create_stop` has for `SEED_DATUM`.
+- `RouteStop.distance_along_route_m` is silently overwritten by a
+  successful geometry generation, even if some other process had set it
+  before. There's no plan.md guidance either way here; treated the same
+  as `Route.path` itself (OSRM is the single source of truth for both,
+  together, in one atomic pass) rather than protecting one field but not
+  the other from the same regeneration.
+
+## Active Todo List (for next agent)
+- [x] Phase 1 import pipeline + migrations + tests (431 passed)
+- [x] Phase 2 geocoding service + script + provenance + tests + live run
+      (447 passed, 88/122 stops located)
+- [x] Phase 3 OSRM route geometry service + script + provenance columns +
+      API exposure + tests (464 tests collect; 8 new pure + 9 new DB tests
+      all pass against live PostGIS)
+- [x] Phase 3 follow-up: live OSRM generation run completed 2026-08-17 —
+      `alembic upgrade head` + import + geocode + geometry script all run
+      against real Docker PostGIS; OSRM reached and pipeline verified
+      end-to-end on a throwaway 2-stop route; **0 real routes eligible**
+      (no route fully located); handoff + docs updated with actual results
+- [ ] Phase 4: enhanced realtime API (bearing/ETA/delay) + optional
+      `Route.path` interpolation in `simulation/engine.py` + tests
+- [ ] Phase 5: admin daily-trip generation endpoint + tests
+- [ ] Phase 6: frontend API contract finalization + tests
+- [ ] Remember: clean transit tables before pytest after running any
+      import/enrichment script that commits
+
+---
+
+# SESSION HANDOFF — Phase 3 VERIFICATION/INTEGRATION COMPLETE (2026-08-17, verification agent)
+
+## Status: Phase 3 verified and stabilized against a live Docker PostgreSQL/PostGIS
+## + real OSRM. **464 tests pass (447 Phase-2 baseline + 17 Phase 3), 0 failures,
+## 0 skips.** One genuine test bug fixed (see below).
+
+## Live-data verification performed
+
+1. **Environment**: Docker Desktop running; `backend/docker-compose.yml` PostGIS
+   16-3.4 container started; DB was empty (alembic at `c3d4e5f6a7b8`).
+2. **Migration**: `alembic upgrade head` applied `d4e5f6a7b8c9` cleanly; exactly one
+   head (`d4e5f6a7b8c9`); `downgrade -1` then `upgrade head` round-trip verified.
+3. **Import** (`scripts/import_transit_data.py --service-date 2026-08-17`): 2 agencies,
+   122 stops, 26 routes, 115 route_stops, 275 trips, 6242 stop_times. 17 stops had
+   SEED_DATUM coordinates.
+4. **Geocoding** (`scripts/geocode_stops.py`, live Nominatim): 71 of 105 null-coord
+   stops resolved (NOMINATIM/APPROXIMATE), 34 UNKNOWN — **identical result to Phase 2's
+   documented live run**. Total 88/122 located.
+5. **Geometry generation** (`scripts/generate_route_geometry.py`, live OSRM):
+   - `--dry-run` and the live run both reported **0 eligible routes**. Verified directly
+     in the DB why: NO route has its full ordered stop sequence located — Red Line 22/23
+     (only `Peshawar Morr (Interchange)` missing, genuinely UNKNOWN after geocoding),
+     FR-01 16/26, FR-04 21/25, FR-07 14/23, FR-14 8/18. The script's "skip a route with
+     even one unlocated stop" rule is exactly why 0 is correct — it never fabricates.
+   - **End-to-end mechanism verified** using a throwaway 2-stop route built from two
+     real SEED_DATUM stops (`Ammar Chowk`, `Bank Road`): real OSRM reached, valid
+     GeoJSON LineString returned (82 points), PostGIS accepted it, `ST_Length` ~2.6 km,
+     waypoints in order, `geometry_source="OSRM"`/`geometry_confidence="OSM-DERIVED"`
+     persisted, `RouteStop.distance_along_route_m` = (0.0, 2612.1), re-run idempotent,
+     `--dry-run` wrote nothing, `--limit 1` respected. Throwaway route deleted
+     afterward; DB restored to the 26-route imported baseline, then cleaned to the empty
+     pytest baseline.
+6. **API**: Phase 3 tests cover `GET /transit/routes/{id}` embedded geometry (null
+   before generation, GeoJSON after) and `GET /transit/routes/{id}/geometry`, plus 404 —
+   all pass.
+
+## Genuine bug found and fixed
+
+- `tests/test_route_geometry.py::test_generate_route_geometry_respects_limit` created
+  3 routes under the **same** agency name, violating `agencies.name` unique constraint
+  → `IntegrityError` against real PostGIS. It had never actually run (the original
+  Phase 3 sandbox could only skip DB tests). Fixed by giving each of the 3 iterations
+  its own agency name. This is the only code change the verification agent made beyond
+  docs/handoff.
+
+## Non-bugs confirmed as correct behavior (not "failures")
+
+- 0 eligible real routes is the intended, honest outcome (see above), not a bug.
+- Docs originally said "live run has not happened" — those passages were updated with
+  the actual live results (DATA_GAPS.md §6, MAP_AND_REALTIME_RECOMMENDATIONS.md,
+  SIMULATION_DATA_SPEC.md, TRANSIT_RESEARCH.md §9/§16, SOURCES.md §4a).
+- `--limit` counts eligible candidates only (matches `geocode_stops.py` convention).
+- OSRM geometry is road-snapped (`OSM-DERIVED`), never claimed to be the BRT's real
+  alignment; docs preserve that distinction throughout.
+
+## What remains before Phase 4
+
+- Nothing blocks Phase 4. Phase 3's geometry generation is code-complete, live-verified,
+  and the DB is back at the empty pytest baseline. When any route's full stop sequence
+  becomes located (e.g. manually resolving `Peshawar Morr (Interchange)` or the ~34
+  UNKNOWN stops), `python scripts/generate_route_geometry.py` will populate `Route.path`
+  for it. `simulation.engine` polyline interpolation remains Phase 4 work.
+
+---
+
 ### What Already Exists and Can Be Reused (Everything)
 
 | Subsystem | Status | Reuse? |

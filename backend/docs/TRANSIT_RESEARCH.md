@@ -264,6 +264,24 @@ confirmed developer-facing endpoint).
 
 ## 9. Geometry information
 
+> **UPDATE (this revision):** point 1's OSRM road-snapping strategy is now
+> **implemented in code** (`seeding/route_geometry.py`,
+> `scripts/generate_route_geometry.py` — `backend/plan.md` Phase 3), producing a
+> `Route.geometry_confidence` value of `"OSM-DERIVED"` (not `"RECONSTRUCTED"` as this
+> section originally recommended — an unresolved naming inconsistency, flagged in
+> MAP_AND_REALTIME_RECOMMENDATIONS.md §A.2). Point 2 (checking OSM for the BRT
+> corridors' real physical alignment before falling back to road-snapping) was **not**
+> implemented — the code goes straight to road-snapping for any eligible route,
+> Red/Orange included. Point 3 holds as written: as of this revision the live database
+> still has no routes with `path` populated. The generation script WAS run live on
+> 2026-08-17 (verified end-to-end against real OSRM + PostGIS on a throwaway two-stop
+> route built from real located stops — geometry generated, persisted, provenance and
+> per-stop distances correct, idempotent, `--dry-run`/`--limit` correct), but **no real
+> route qualified**: after Phase 2's geocoding, no route's full ordered stop sequence is
+> located (Red Line 1 short, FR-01 10, FR-04 4, FR-07 9, FR-14 10 — per-route counts in
+> DATA_GAPS.md §6). This is the correct, honest state: the script never fabricates a
+> line for a route with an unlocated stop.
+
 **No official route polyline/shapefile/GeoJSON was found for any route — this
 finding is unchanged by the follow-up pass.** The CDA per-route timetable PDFs (§8)
 give stop **names and times only**; they do not contain coordinates or geometry of any
@@ -279,12 +297,15 @@ was found on GitHub or elsewhere.
 MAP_AND_REALTIME_RECOMMENDATIONS.md and SIMULATION_DATA_SPEC.md):
 
 1. For routes with a confirmed ordered stop sequence and coordinates (currently: a
-   subset of Red Line stops), road-following geometry can be reconstructed via an
-   OSM-based routing engine (e.g. OSRM/Valhalla against an Islamabad/Rawalpindi OSM
-   extract, or the free OSRM demo server for prototyping only — not for production
-   load) snapped through each stop in sequence. This produces a `RECONSTRUCTED`
-   (not `OFFICIAL`) geometry — accurate to "follows real roads" but not to "is the
-   bus's actual lane/alignment," which matters especially for the Red/Orange Lines'
+   subset of Red Line stops, plus FR-01/04/07/14's officially-sourced sequences from
+   §8 — coordinates for those still need geocoding, see DATA_GAPS.md §7), road-following
+   geometry can be reconstructed via an OSM-based routing engine (e.g. OSRM/Valhalla
+   against an Islamabad/Rawalpindi OSM extract, or the free OSRM demo server for
+   prototyping only — not for production load) snapped through each stop in sequence.
+   **IMPLEMENTED** (see update note above) — though the implementation labels this
+   outcome `"OSM-DERIVED"`, not `"RECONSTRUCTED"` as originally written here. This
+   produces a geometry accurate to "follows real roads" but not to "is the bus's
+   actual lane/alignment," which matters especially for the Red/Orange Lines'
    *dedicated, often elevated or trenched* busway that does not run on the same
    alignment as general-traffic roads at every point.
 2. For the dedicated-lane BRT corridors (Red, Orange) specifically, OSM likely already
@@ -293,12 +314,15 @@ MAP_AND_REALTIME_RECOMMENDATIONS.md and SIMULATION_DATA_SPEC.md):
    directly (via Overpass, `highway=busway` / `bus=designated` tags, or a `route=bus`
    relation already tagged for these lines) before falling back to road-snapping
    through stops, since a real physical-alignment geometry is a strictly better input
-   to the simulator than a road-snapped reconstruction.
+   to the simulator than a road-snapped reconstruction. **NOT IMPLEMENTED** — still an
+   open follow-up (see update note above).
 3. Until either exists, `Route.path` should remain `NULL` for a route rather than
    populated with a straight-line or fabricated polyline — the existing simulator's
    interpolation degrades gracefully (straight-line between consecutive stops) when
    `Route.path` is absent, and that is a more honest state than a geometry field that
-   looks authoritative but isn't.
+   looks authoritative but isn't. **This is exactly what the implementation does**:
+   `scripts/generate_route_geometry.py` only ever writes `path` for a route where OSRM
+   actually succeeded, and never for a route with an unlocated stop.
 
 ## 10. Simulation implications
 
@@ -411,6 +435,13 @@ See DATA_GAPS.md for the full, explicit list. The three most implementation-rele
 
 ## 16. RECOMMENDED IMPLEMENTATION ORDER
 
+> **UPDATE (this revision):** steps 1, 3, and 4 below have been implemented, as
+> **Phases 1–3** of `backend/plan.md` (a separate, code-level plan derived from this
+> section). Their descriptions below are left as originally written — they're still an
+> accurate account of what was recommended and largely what was built — with a status
+> note added to each. Steps 2/2a/5+ remain open. See `backend/plan.md`'s Phase 1/2/3
+> handoffs for exact implementation detail, file lists, and test status.
+
 Adjusted from the brief's example order based on what this inspection actually found:
 
 1. **Extend the import schema** (`seeding/import_schema.py`, `parsers.py`,
@@ -419,7 +450,8 @@ Adjusted from the brief's example order based on what this inspection actually f
    nullable fields only; existing agencies/stops/routes/route_stops import behavior
    must not change. **This step just got more valuable**: `transit_data.json` now
    contains real `trips`/`stop_times` data (FR-01/04/07/14) that needs exactly this
-   schema extension to import, not just a hypothetical future need.
+   schema extension to import, not just a hypothetical future need. **STATUS: DONE**
+   (`backend/plan.md` Phase 1).
 2. **Import the researched static dataset** (`transit_data.json`'s operators, stops,
    routes, route_stops, trips, stop_times, transfers) via that extended importer, in
    `replace` mode against a scratch/dev database, distinct from (not overwriting) the
@@ -427,19 +459,30 @@ Adjusted from the brief's example order based on what this inspection actually f
    FR-01/04/07/14, this means generating the full day's real trips by repeating each
    route's canonical stop-time pattern every `headway_min` from `first_trip_start` to
    `last_trip_start` (`total_trips_per_day` trips total) — a direct, mechanical
-   expansion, not an assumption (see SIMULATION_DATA_SPEC.md).
+   expansion, not an assumption (see SIMULATION_DATA_SPEC.md). **STATUS: import
+   tooling exists (`backend/plan.md` Phase 1); the actual live import run against a
+   real database's outcome is tracked in `backend/plan.md`'s Phase 1/2/3 handoffs, not
+   here.**
 2a. **(New, optional, high-value) Fetch the remaining 18 CDA feeder routes' PDFs**
     before or alongside step 2 — same URL pattern, same extraction approach, already
     proven to work for 4 routes. Doing this now, before building on top of the current
     4-route dataset, avoids re-doing the import-schema/simulation-integration work
-    twice.
+    twice. **STATUS: still open** — not part of any implemented phase.
 3. **Reconstruct road-following route geometry** for at least the Red Line (the one
    route with a full ordered stop sequence) via an OSM-based approach (§9), and store
    it in `Route.path`. Leave `Route.path` `NULL` for every other route until their stop
-   sequences/geometry exist.
+   sequences/geometry exist. **STATUS: DONE, generically** (`backend/plan.md` Phase 3,
+   `seeding/route_geometry.py`) — not restricted to the Red Line specifically, applies
+   to any route whose full stop sequence is located. The live run (2026-08-17)
+   confirmed the mechanism works end-to-end but generated geometry for **zero real
+   routes**: the Red Line itself is one located stop short of eligibility (its
+   `Peshawar Morr (Interchange)` stop could not be geocoded — UNKNOWN), and the FR
+   routes are 4–10 short (see §9's update note and DATA_GAPS.md §6).
 4. **Expose geographic data via the transit API**: serialize `Route.path` as GeoJSON
    (additive endpoint or field), review the nearby-stops/route-detail endpoints for
-   what a map client needs (see MAP_AND_REALTIME_RECOMMENDATIONS.md §B).
+   what a map client needs (see MAP_AND_REALTIME_RECOMMENDATIONS.md §B). **STATUS:
+   DONE** (`backend/plan.md` Phase 3 — `GET /transit/routes/{id}` and
+   `GET /transit/routes/{id}/geometry`).
 5. **Make simulation timing route-aware**: replace the single global
    `SIMULATED_VEHICLE_SPEED_KMH`/`DEFAULT_DWELL_SECONDS` with per-route (or
    per-route-type) values, calibrated against the real frequency/journey-time data

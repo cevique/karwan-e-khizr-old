@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import decimal
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -91,8 +92,38 @@ class RouteStopRead(BaseModel):
     stop: StopRead
 
 
+class RouteGeometryRead(BaseModel):
+    """A Route's road-following polyline (Phase 3, plan.md section D/G),
+    as GeoJSON - unlike `Coordinates` (a single point), a full LineString
+    earns GeoJSON's extra structure since that's what a map client's
+    polyline-rendering call typically expects directly (see
+    `Coordinates`'s docstring for why single points instead use the
+    plainer lat/lng shape).
+
+    Explicitly nullable end-to-end (`type`/`coordinates` both `None`) for
+    a Route whose geometry hasn't been generated yet
+    (`db/models/route.py`'s `path` is nullable) - the client can then
+    render the route's stops as markers only, without a connecting line,
+    rather than receiving an error or a fabricated straight-line path.
+    `geometry_source`/`geometry_confidence` are always present (even when
+    `coordinates` is null) so the client/dev can tell "not attempted yet"
+    (both null) apart from "attempted, OSRM couldn't route it"
+    (`geometry_confidence == \"UNKNOWN\"`, still no coordinates) - see
+    `db/models/route.py`'s field docstrings.
+    """
+
+    type: Literal["LineString"] | None
+    coordinates: list[tuple[float, float]] | None = Field(
+        None, description="[longitude, latitude] pairs, GeoJSON order."
+    )
+    geometry_source: str | None
+    geometry_confidence: str | None
+
+
 class RouteDetail(BaseModel):
-    """Full representation of a Route, including its ordered stops."""
+    """Full representation of a Route, including its ordered stops and
+    road-following geometry (Phase 3 adds `geometry`; see
+    `RouteGeometryRead`'s docstring for why it's nullable)."""
 
     id: uuid.UUID
     agency_id: uuid.UUID
@@ -101,3 +132,4 @@ class RouteDetail(BaseModel):
     color: str | None
     agency: AgencyRead
     stops: list[RouteStopRead]
+    geometry: RouteGeometryRead

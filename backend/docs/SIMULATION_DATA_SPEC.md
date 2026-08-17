@@ -1,9 +1,32 @@
 # SIMULATION_DATA_SPEC.md
 
 How the researched transit data (`transit_data.json`) should eventually map into the
-existing backend's simulation architecture. Specification only — no implementation.
+existing backend's simulation architecture. **This was originally specification-only —
+Phase 3 of `backend/plan.md` has since implemented the route-geometry-generation half
+of it** (`seeding/route_geometry.py`, `scripts/generate_route_geometry.py`,
+`Route.geometry_source`/`geometry_confidence`); the rest (§2 point 2's
+`simulation.engine` polyline-interpolation extension, and the trip-import mechanics in
+§1) remains specification-only, planned for a later phase. See the update note below
+and `backend/plan.md`'s Phase 3 handoff for exact status.
 
-> **UPDATE (this revision):** `transit_data.json` now contains REAL, officially-sourced
+> **UPDATE (this revision — Phase 3 implementation status):** the route-geometry
+> generation mechanism described in §1 ("route geometry") and referenced in §2 point 2
+> now EXISTS in code (`seeding/route_geometry.py` + `scripts/generate_route_geometry.py`,
+> using OSRM road-snapping — see MAP_AND_REALTIME_RECOMMENDATIONS.md §A.2 for how this
+> relates to the "check for a real mapped alignment first" recommendation, which was
+> NOT implemented). The live generation run WAS performed on 2026-08-17 and verified
+> end-to-end against live Docker PostGIS + the real OSRM public server: valid GeoJSON
+> `LineString` returned, `Route.path` accepted by PostGIS, provenance
+> (`geometry_source="OSRM"`/`geometry_confidence="OSM-DERIVED"`) and
+> `RouteStop.distance_along_route_m` persisted, idempotent re-run, `--dry-run` wrote
+> nothing, `--limit` respected. However `Route.path` is still `NULL` for every *real*
+> route in the live database: after Phase 2's geocoding (88/122 stops located), no
+> route's full ordered stop sequence is located yet (Red Line 1 short, FR-01 10, FR-04 4,
+> FR-07 9, FR-14 10 — per-route counts in DATA_GAPS.md §6). `simulation.engine`'s
+> polyline-interpolation extension (§2 point 2) is explicitly NOT part of Phase 3 and
+> remains unimplemented — that's Phase 4.
+
+> **UPDATE (earlier revision):** `transit_data.json` now contains REAL, officially-sourced
 > stop-level trip data for 4 CDA feeder routes (FR-01, FR-04, FR-07, FR-14), stored as
 > one canonical stop-time pattern per route/direction plus the service parameters
 > needed to regenerate the full day's real trips. §1 and §2 below are updated to
@@ -44,11 +67,23 @@ published trip schedule
        simulation.trip_builder.build_trip_for_route + simulation.timing.
 
 route geometry
-    -> db.models.Route.path (LINESTRING) -- currently NULL for every real route;
-       populate only once real/reconstructed geometry exists (§9 of
-       TRANSIT_RESEARCH.md, §A of MAP_AND_REALTIME_RECOMMENDATIONS.md)
+    -> db.models.Route.path (LINESTRING) -- POPULATION MECHANISM NOW IMPLEMENTED
+       AND LIVE-VERIFIED (Phase 3, backend/plan.md): seeding/route_geometry.py +
+       scripts/generate_route_geometry.py generate it via OSRM road-snapping for
+       any route whose full ordered stop sequence is already located. The live run
+       (2026-08-17) confirmed the end-to-end path works against real OSRM + PostGIS,
+       but `path` is still NULL for every real route because no route's full stop
+       sequence is located yet (Red Line 1 stop short, FR routes 4-10 short - see
+       DATA_GAPS.md §6) - a data-availability gap, not a missing-capability or
+       execution gap. Also new: `Route.geometry_source`
+       / `Route.geometry_confidence` columns record provenance per route (see §9 of
+       TRANSIT_RESEARCH.md, §A of MAP_AND_REALTIME_RECOMMENDATIONS.md for the
+       OSRM-vs-real-alignment distinction this doesn't yet resolve).
     -> consumed by an EXTENDED simulation.engine.compute_position_at (see §2 below)
-       for interpolation, once populated
+       for interpolation, once populated -- THIS EXTENSION IS STILL NOT DONE
+       (it's Phase 4 in backend/plan.md, not Phase 3); `simulation.engine` as of
+       this revision still only ever interpolates straight-line between adjacent
+       stops, regardless of whether `Route.path` is populated for that route.
 
 simulated vehicle
     -> db.models.Vehicle + db.models.VehiclePosition (unchanged; already fully
@@ -95,17 +130,24 @@ simulated vehicle
      philosophy itself.
 2. `simulation.engine`'s interpolation should optionally walk a real `Route.path`
    polyline instead of a straight line between two adjacent stops, when that geometry
-   is available:
+   is available. **STATUS: NOT YET DONE — this is Phase 4, not Phase 3.** Phase 3
+   only built the geometry-*generation* side (`seeding/route_geometry.py`); the
+   description below is still a spec for a next phase, not something to assume is
+   already wired up:
    - Additive: `TripSchedule`/`ScheduleStop` would need the relevant route's polyline
      (or pre-computed cumulative-distance-along-path values per stop) made available
      to `compute_position_at`, and the existing straight-line
      `simulation.geo.interpolate_point` call would become "interpolate along the
      polyline segment between this stop's and the next stop's projected position on
      `Route.path`" instead of "interpolate directly between the two stop points."
-   - When `Route.path` is `NULL` for a route (true for every route today, and likely
-     true for most routes for a long time per DATA_GAPS.md), the existing
-     straight-line behavior remains the correct fallback — this is not a breaking
-     change, it's a better path taken only when better data exists.
+   - When `Route.path` is `NULL` for a route (true for every route in the live
+     database as of this revision — Phase 3's generation script was run live on
+     2026-08-17 and works, but no route's full stop sequence is located yet, so no
+     real route qualified, see `backend/plan.md`'s Phase 3 handoff and DATA_GAPS.md
+     §6 — and will remain true for the four main Metrobus lines and most feeder
+     routes even once one qualifies, per DATA_GAPS.md), the existing straight-line
+     behavior remains the correct fallback — this is not a breaking change, it's a
+     better path taken only when better data exists.
    - This keeps `simulation.engine` a pure, deterministic, DB-free module — the
      polyline itself is loaded by `simulation.trip_builder`/`simulation.provider` (the
      existing DB-adapter layer), exactly as `Route.path`/coordinates are loaded there

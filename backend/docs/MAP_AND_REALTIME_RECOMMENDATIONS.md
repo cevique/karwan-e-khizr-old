@@ -3,7 +3,26 @@
 Specification only — no implementation. This document assumes TRANSIT_RESEARCH.md and
 DATA_GAPS.md have already been read.
 
-> **UPDATE (this revision):** a follow-up pass found official, stop-level CDA feeder-
+> **UPDATE (this revision):** Phase 3 of `backend/plan.md` implemented §A.2's
+> road-snapping fallback (option 3 below) and §B's route-geometry API exposure —
+> `seeding/route_geometry.py`, `scripts/generate_route_geometry.py`, and
+> `GET /transit/routes/{id}` / `GET /transit/routes/{id}/geometry` all now exist in
+> the backend. §A.1 (OSM query for the real physical BRT alignment) and §A.2's options
+> 1–2 were NOT pursued — the implementation went straight to OSRM road-snapping
+> (option 3) rather than first checking for a real-alignment OSM relation, so that
+> distinction (§A.2) is still open work, not something this update resolves. The live
+> generation run against the real database WAS performed on 2026-08-17 and verified
+> end-to-end (live Docker PostGIS + outbound OSRM access): the OSRM provider returned a
+> valid GeoJSON `LineString`, PostGIS accepted the generated `Route.path`, provenance
+> (`geometry_source`/`geometry_confidence` = `OSRM`/`OSM-DERIVED`) and per-stop
+> `RouteStop.distance_along_route_m` were persisted, re-running was idempotent,
+> `--dry-run` wrote nothing, and `--limit` worked. However, **no *real* route received
+> geometry**: after Phase 2's geocoding (88/122 stops located), no route's full ordered
+> stop sequence is located yet (Red Line is 1 stop short, FR routes 4–10 short — see
+> DATA_GAPS.md §6's update note for the per-route counts). This is the correct, honest
+> state: the script never fabricates a line for a route with an unlocated stop.
+
+> **UPDATE (earlier revision):** a follow-up pass found official, stop-level CDA feeder-
 > route timetable PDFs (DATA_GAPS.md §0). Worth stating explicitly here since it's
 > easy to assume otherwise: **those PDFs give stop names and times only — no
 > coordinates, no geometry.** Nothing in §A/§B below changes as a result; the map/
@@ -43,6 +62,17 @@ carried forward here:
   assumed or required for the current scope.
 
 ### A.2 OpenStreetMap usage for route geometry (concrete next research/implementation step)
+
+**Status: option 3 below is IMPLEMENTED** (`seeding/route_geometry.py` +
+`scripts/generate_route_geometry.py`, Phase 3). **Options 1–2 (checking for a real
+mapped alignment before falling back to road-snapping) were NOT done** — the
+implementation went straight to OSRM road-snapping. This is a real, still-open gap:
+road-snapped geometry is a strictly worse approximation than the BRT corridors' real
+physical alignment where one is actually mapped in OSM (elevated/trenched sections
+especially), so options 1–2 remain worth doing as a follow-up, and any route currently
+tagged `geometry_confidence: "OSM-DERIVED"` in the database should be treated as "best
+available today," not "as good as this could get."
+
 This research pass did not have live Overpass API access. The concrete next step
 (either for OpenCode directly, or a short follow-up research pass) is:
 
@@ -79,6 +109,16 @@ This research pass did not have live Overpass API access. The concrete next step
    or `RECONSTRUCTED` (road-snapped through stops, not a real mapped alignment) — never
    silently upgraded to look more authoritative than it is.
 
+   **Naming note (Phase 3 implementation deviates from this list):** the implemented
+   `db/models/route.py` uses `"OSM-DERIVED"` for the OSRM road-snap outcome (point 3
+   above), not `"RECONSTRUCTED"` as recommended here. This wasn't a deliberate
+   reinterpretation — it's an inconsistency between this recommendations doc and the
+   actual schema, flagged here rather than silently resolved either way. If options
+   1–2 (a real mapped alignment) are ever implemented, they'll need their own distinct
+   confidence value (this doc's `OFFICIAL`, or reuse of the model's existing `path`
+   provenance fields with a value not yet in use) to stay distinguishable from the
+   road-snapped `OSM-DERIVED` result already in the database.
+
 ### A.3 Backend vs. frontend responsibilities
 - **Backend** owns: canonical stop/route/geometry data, computing the selected
   journey's path (walk legs + ride legs + transfer points), and simulated/real vehicle
@@ -99,18 +139,23 @@ endpoint — additive changes to the existing `api/transit/` routers are suffici
   (`api/transit/schemas.py`) — sufficient as-is for point markers. No change needed
   here beyond populating more real stop coordinates as they become available (§7 of
   DATA_GAPS.md).
-- **Routes**: currently `Route.path` is deliberately not serialized
-  (`api/transit/router.py`'s own module docstring says so explicitly). Once populated
+- **Routes**: **IMPLEMENTED as of Phase 3** — `Route.path` is now exposed as GeoJSON
+  via `GET /transit/routes/{id}` (embedded `geometry` field) and
+  `GET /transit/routes/{id}/geometry` (standalone), returning
+  `{type, coordinates, geometry_source, geometry_confidence}`, explicitly null for a
+  route with no geometry generated yet — see `api/transit/schemas.py`'s
+  `RouteGeometryRead` and `backend/plan.md`'s Phase 3 handoff. Populating `path` itself
+  was verified working end-to-end against live OSRM + PostGIS on 2026-08-17; no *real*
+  route has `path` populated yet only because no route's full stop sequence is located
+  (§A.2's status note above, per-route counts in DATA_GAPS.md §6).
   (§A.2), it should be exposed as a GeoJSON `LineString` (or `null` if not yet
   available for that route) — additive to the existing `RouteDetail`/`RouteListItem`
   schemas, not a breaking change to them.
-- **Route geometry confidence**: since geometry confidence varies per route (§A.2),
-  consider exposing a `geometry_confidence` (or similar) field alongside `path` so a
-  frontend could, if desired, visually distinguish "this is the bus's real physical
-  alignment" from "this is a best-effort road-snapped reconstruction" — optional, but
-  cheap to add now while the schema is being touched anyway, and it directly serves the
-  "clearly distinguish official geometry from reconstructed geometry" requirement from
-  the research brief.
+- **Route geometry confidence**: **IMPLEMENTED as of Phase 3** — `geometry_confidence`
+  (and `geometry_source`) are exposed alongside `coordinates` in `RouteGeometryRead`,
+  exactly as recommended here. The frontend does not yet do anything differently based
+  on the value (that's a frontend/Phase 6 decision, not a backend one), but the data is
+  there to support it.
 - **Journeys**: a computed itinerary (existing `routing`/`api/transit/journeys.py`
   subsystem) should expose, per leg: leg type (walk/ride), the specific route+stop
   range for a ride leg (so the frontend can slice that route's own polyline to just

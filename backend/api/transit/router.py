@@ -15,16 +15,23 @@ keeps every list/detail endpoint here to one query (plus, for route
 detail, exactly one more to batch-fetch its stops' coordinates) with no
 N+1, and avoids a new dependency.
 
-Route geometry (`Route.path`, a LineString) is intentionally NOT
-serialized in this step - the task only calls for exposing a Route's
-ordered Stops, and a full polyline representation (better done as GeoJSON,
-unlike the simple lat/lng pairs used for Stop points) is left for whenever
-the mobile client actually needs to render route paths on the map, to
-avoid over-engineering this step.
+Route geometry (`Route.path`, a LineString) IS serialized as of Phase 3
+(plan.md section D/G): `GET /transit/routes/{id}` embeds it as a
+`RouteGeometryRead` (GeoJSON), and `GET /transit/routes/{id}/geometry`
+returns just that same shape on its own for a client that only needs the
+polyline. `Route.path` is extracted via `ST_AsGeoJSON` (after the same
+`::geometry` cast the lat/lng helpers below use) for the same reason
+those don't load the raw GeoAlchemy2 WKB element into Python - see this
+module's coordinate-extraction paragraph above. A Route with no geometry
+generated yet (`path IS NULL` - most routes, until
+`scripts/generate_route_geometry.py` has run, see `docs/DATA_GAPS.md`)
+serializes as `{"type": null, "coordinates": null, ...}`, not an error or
+a fabricated straight line.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -37,6 +44,7 @@ from api.transit.schemas import (
     AgencyRead,
     Coordinates,
     RouteDetail,
+    RouteGeometryRead,
     RouteListItem,
     RouteStopRead,
     StopRead,
@@ -65,6 +73,31 @@ def _longitude_expr():
 
 def _latitude_expr():
     return func.ST_Y(cast(Stop.location, Geometry)).label("latitude")
+
+
+def _route_geometry_json_expr():
+    """`Route.path` as a GeoJSON string (or SQL NULL when `path IS NULL`)
+    - see this module's docstring for why `ST_AsGeoJSON` is used instead
+    of loading the ORM column directly."""
+    return func.ST_AsGeoJSON(cast(Route.path, Geometry)).label("geometry_json")
+
+
+def _route_geometry_read(route: Route, geometry_json: str | None) -> RouteGeometryRead:
+    if geometry_json is None:
+        return RouteGeometryRead(
+            type=None,
+            coordinates=None,
+            geometry_source=route.geometry_source,
+            geometry_confidence=route.geometry_confidence,
+        )
+    parsed = json.loads(geometry_json)
+    coordinates = [(pt[0], pt[1]) for pt in parsed["coordinates"]]
+    return RouteGeometryRead(
+        type=parsed["type"],
+        coordinates=coordinates,
+        geometry_source=route.geometry_source,
+        geometry_confidence=route.geometry_confidence,
+    )
 
 
 def _stop_read(
@@ -130,20 +163,22 @@ async def get_route(
     route_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ) -> RouteDetail:
-    """Fetch a single Route, including its agency and ordered stops."""
+    """Fetch a single Route, including its agency, ordered stops, and
+    road-following geometry (see this module's docstring)."""
     result = await session.execute(
-        select(Route)
+        select(Route, _route_geometry_json_expr())
         .where(Route.id == route_id)
         .options(
             selectinload(Route.agency),
             selectinload(Route.route_stops).selectinload(RouteStop.stop),
         )
     )
-    route = result.scalar_one_or_none()
-    if route is None:
+    row = result.first()
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
         )
+    route, geometry_json = row
 
     # `route.route_stops` is already ordered by `sequence` (see the
     # relationship's `order_by` in db/models/route.py), so no re-sorting is
@@ -183,7 +218,28 @@ async def get_route(
         color=route.color,
         agency=AgencyRead.model_validate(route.agency),
         stops=stops,
+        geometry=_route_geometry_read(route, geometry_json),
     )
+
+
+@router.get("/routes/{route_id}/geometry", response_model=RouteGeometryRead)
+async def get_route_geometry(
+    route_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> RouteGeometryRead:
+    """Fetch just a Route's road-following geometry (GeoJSON), without the
+    rest of `RouteDetail` - for a map client that already has the route
+    list/detail and only needs to (re)draw its polyline."""
+    result = await session.execute(
+        select(Route, _route_geometry_json_expr()).where(Route.id == route_id)
+    )
+    row = result.first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
+        )
+    route, geometry_json = row
+    return _route_geometry_read(route, geometry_json)
 
 
 # --------------------------------------------------------------------------

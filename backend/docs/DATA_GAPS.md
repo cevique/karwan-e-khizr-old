@@ -273,6 +273,29 @@ concrete next step (OSM query / OSRM road-snapping) — this is a "not yet done,
 "doesn't exist," gap, unlike the stop-time gap above which is a genuine absence in the
 real world.
 
+> **UPDATE (this revision):** the OSRM road-snapping mechanism is now **implemented in
+> code** (`backend/seeding/route_geometry.py`, `backend/scripts/generate_route_geometry.py`
+> — `backend/plan.md` Phase 3), and **was run live against the real database on
+> 2026-08-17** (verified from a live-Docker-PostGIS environment with outbound access to
+> `router.project-osrm.org`). The live run confirmed **0 eligible real routes**: after
+> Phase 2's geocoding pass (88 of 122 stops located), no route has its *full* ordered
+> stop sequence located — Red Line is 1 stop short (`Peshawar Morr (Interchange)`,
+> genuinely UNKNOWN), FR-01 is 10 short, FR-04 4, FR-07 9, FR-14 10 (per-route counts
+> verified directly against the database). So `Route.path` is still `NULL` for every
+> real route, and this is the **correct, honest outcome** — the script never fabricates a
+> line for a route with an unlocated stop. The OSRM provider itself was verified
+> end-to-end against a throwaway 2-stop route built from real located stops: it reached
+> OSRM, received a valid GeoJSON `LineString`, PostGIS accepted it, provenance
+> (`geometry_source="OSRM"`, `geometry_confidence="OSM-DERIVED"`) and per-stop
+> `distance_along_route_m` were persisted correctly, re-running was idempotent, `--dry-run`
+> wrote nothing, and `--limit` behaved as documented. This is still a "not yet done" gap,
+> now one step further along than before: the tool exists **and** has been proven to work
+> live; it just has no real routes to operate on until every stop on at least one route
+> is located. It also only ever produces `"OSM-DERIVED"` road-snapped geometry (never
+> the real BRT physical alignment — see MAP_AND_REALTIME_RECOMMENDATIONS.md §A.2's
+> status note), so even once a route becomes fully located, `path` will be a
+> road-following approximation, not an authoritative alignment.
+
 ## 7. Uncertain coordinates (restated for emphasis, now including the CDA timetable PDFs)
 
 Every coordinate in `transit_data.json` traces back to the *existing repository's* own
