@@ -20,7 +20,13 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from simulation.geo import Point, interpolate_point
+from simulation.geo import (
+    Point,
+    compute_bearing,
+    haversine_distance_m,
+    interpolate_point,
+    point_along_polyline,
+)
 
 # See db/models/vehicle_position.py's `VEHICLE_POSITION_STATUSES` - kept
 # as a plain tuple here too (not imported from `db.models`) so this module
@@ -77,6 +83,15 @@ class SimulatedPosition:
     elapsed_s: float
     vehicle_id: uuid.UUID | None = None
     as_of: datetime | None = None
+    # Phase 4 (plan.md section F/G): direction of travel, degrees
+    # clockwise from true north, and current speed in km/h. Both `None`
+    # exactly when there's no meaningful direction/motion to report -
+    # `next_stop_id is None` (the trip is `completed`, or a degenerate
+    # single-stop schedule that hasn't started) - never a fabricated
+    # value for that case. See `compute_position_at`'s docstring for the
+    # per-status computation.
+    bearing: float | None = None
+    speed_kmh: float | None = None
 
 
 def compute_position_at(
@@ -85,6 +100,7 @@ def compute_position_at(
     *,
     vehicle_id: uuid.UUID | None = None,
     as_of: datetime | None = None,
+    route_geometry: list[Point] | None = None,
 ) -> SimulatedPosition:
     """Compute exactly one deterministic `SimulatedPosition` for `schedule`
     at `elapsed_s` seconds since the trip's `scheduled_start_time`.
@@ -106,6 +122,35 @@ def compute_position_at(
        `simulation.geo.interpolate_point`) between the two, `status`
        `"en_route"`.
 
+    **Phase 4 additions** (plan.md section F/G), layered onto the same
+    four cases without changing any of the position/status logic above:
+
+    - `bearing`: the direction of travel toward `next_stop_id`'s
+      coordinates (`simulation.geo.compute_bearing`) - `None` whenever
+      `next_stop_id` is `None` (case 2, or a degenerate single-stop
+      schedule in case 1), since there is nothing to face. Cases 1 and 3
+      (stationary, either not yet departed or dwelling) use a straight
+      current-stop-to-next-stop bearing; case 4 (actually moving) uses
+      `route_geometry`-aware bearing when available (see below), since
+      that's the case where the road's actual curve matters.
+    - `speed_kmh`: `0.0` whenever the vehicle isn't moving (cases 1-3);
+      in case 4, the constant implied speed of the current inter-stop
+      segment (segment distance / segment duration) - constant across
+      the whole segment by construction, since
+      `simulation.timing.compute_stop_time_offsets` already assumes one
+      constant speed per trip; this reports that same figure back, not a
+      recomputation from live sensor data (there is none).
+    - `route_geometry`: optional ordered list of `simulation.geo.Point`s
+      (the loaded `Route.path`, see `simulation.provider`) that case 4
+      follows via `simulation.geo.point_along_polyline` instead of the
+      plain straight-line `interpolate_point`, when it actually covers
+      the current stop pair in order. Falls back to straight-line
+      interpolation (identical to the `route_geometry=None` behavior)
+      whenever it doesn't - `point_along_polyline` returning `None` is
+      the documented "don't fabricate a wrong-direction path" signal.
+      `None` (the default) reproduces this function's pre-Phase-4
+      behavior exactly.
+
     Raises `ValueError` if `schedule.stops` is empty - there is nothing
     to compute a position from.
     """
@@ -121,6 +166,8 @@ def compute_position_at(
         status: str,
         current_stop_id: uuid.UUID | None,
         next_stop_id: uuid.UUID | None,
+        bearing: float | None = None,
+        speed_kmh: float | None = None,
     ) -> SimulatedPosition:
         return SimulatedPosition(
             trip_id=schedule.trip_id,
@@ -133,20 +180,43 @@ def compute_position_at(
             elapsed_s=elapsed_s,
             vehicle_id=vehicle_id,
             as_of=as_of,
+            bearing=bearing,
+            speed_kmh=speed_kmh,
+        )
+
+    def _stationary_bearing(current: ScheduleStop, next_stop: ScheduleStop | None) -> float | None:
+        if next_stop is None:
+            return None
+        return compute_bearing(
+            Point(current.latitude, current.longitude),
+            Point(next_stop.latitude, next_stop.longitude),
         )
 
     # Case 1: not yet reached the first stop (or exactly arriving at it).
     if elapsed_s <= first.arrival_offset_s:
         status = AT_STOP if elapsed_s == first.arrival_offset_s else NOT_STARTED
-        next_stop_id = stops[1].stop_id if len(stops) > 1 else None
+        next_stop = stops[1] if len(stops) > 1 else None
+        next_stop_id = next_stop.stop_id if next_stop is not None else None
         return _position(
-            first.latitude, first.longitude, status, first.stop_id, next_stop_id
+            first.latitude,
+            first.longitude,
+            status,
+            first.stop_id,
+            next_stop_id,
+            bearing=_stationary_bearing(first, next_stop),
+            speed_kmh=0.0,
         )
 
     # Case 2: past (or exactly at) the end of the trip.
     if elapsed_s >= last.arrival_offset_s:
         return _position(
-            last.latitude, last.longitude, COMPLETED, last.stop_id, None
+            last.latitude,
+            last.longitude,
+            COMPLETED,
+            last.stop_id,
+            None,
+            bearing=None,
+            speed_kmh=0.0,
         )
 
     # Cases 3/4: somewhere between the first and last stop.
@@ -158,6 +228,8 @@ def compute_position_at(
                 AT_STOP,
                 current.stop_id,
                 following.stop_id,
+                bearing=_stationary_bearing(current, following),
+                speed_kmh=0.0,
             )
         if current.departure_offset_s < elapsed_s < following.arrival_offset_s:
             span_s = following.arrival_offset_s - current.departure_offset_s
@@ -166,17 +238,42 @@ def compute_position_at(
                 if span_s > 0
                 else 1.0
             )
-            point = interpolate_point(
-                Point(current.latitude, current.longitude),
-                Point(following.latitude, following.longitude),
-                fraction,
+            current_point = Point(current.latitude, current.longitude)
+            following_point = Point(following.latitude, following.longitude)
+
+            along_polyline = (
+                point_along_polyline(route_geometry, current_point, following_point, fraction)
+                if route_geometry is not None
+                else None
             )
+            if along_polyline is not None:
+                point, bearing = along_polyline
+            else:
+                point = interpolate_point(current_point, following_point, fraction)
+                bearing = compute_bearing(current_point, following_point)
+
+            if span_s > 0:
+                # Speed is reported from the straight-line (haversine)
+                # segment distance even when `route_geometry` supplies a
+                # longer road-following path - deliberately: the ~20 km/h
+                # constant this whole segment's duration was computed
+                # from (`simulation.timing.compute_stop_time_offsets`)
+                # was itself derived the same way (see that module's
+                # docstring), so this reports the exact speed implied by
+                # the schedule, not a different, inconsistent number.
+                segment_distance_m = haversine_distance_m(current_point, following_point)
+                speed_kmh = (segment_distance_m / span_s) * 3.6
+            else:
+                speed_kmh = 0.0
+
             return _position(
                 point.latitude,
                 point.longitude,
                 EN_ROUTE,
                 current.stop_id,
                 following.stop_id,
+                bearing=bearing,
+                speed_kmh=speed_kmh,
             )
 
     # Unreachable given the Case 1/2 bounds above and

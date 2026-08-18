@@ -24,7 +24,7 @@ from simulation.engine import (
     TripSchedule,
     compute_position_at,
 )
-from simulation.geo import Point, haversine_distance_m, interpolate_point
+from simulation.geo import Point, compute_bearing, haversine_distance_m, interpolate_point
 from simulation.timing import StopTimingInput, compute_stop_time_offsets
 
 # ---------------------------------------------------------------------------
@@ -268,3 +268,106 @@ def test_compute_position_at_movement_is_monotonic_along_the_route(
         position = compute_position_at(schedule, float(elapsed_s))
         assert position.longitude >= previous_longitude - 1e-9
         previous_longitude = position.longitude
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: bearing / speed_kmh (plan.md section F/G)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_position_at_not_started_bearing_faces_first_stop(
+    three_stop_schedule,
+):
+    schedule, (s1, s2, _) = three_stop_schedule
+    position = compute_position_at(schedule, -10.0)
+    assert position.status == NOT_STARTED
+    # s1 -> s2 is due east (same latitude, increasing longitude) -> 90 degrees.
+    assert position.bearing == pytest.approx(90.0, abs=1e-6)
+    assert position.speed_kmh == 0.0
+
+
+def test_compute_position_at_at_stop_bearing_faces_next_stop(three_stop_schedule):
+    schedule, _ = three_stop_schedule
+    position = compute_position_at(schedule, 10.0)  # dwelling at s1
+    assert position.status == AT_STOP
+    assert position.bearing == pytest.approx(90.0, abs=1e-6)
+    assert position.speed_kmh == 0.0
+
+
+def test_compute_position_at_en_route_bearing_and_speed(three_stop_schedule):
+    schedule, _ = three_stop_schedule
+    # Mid-segment between s1 (departs 20) and s2 (arrives 200): the two
+    # points are due east of each other, so bearing is 90 degrees; speed
+    # is the implied constant speed for that segment (distance/duration).
+    position = compute_position_at(schedule, 110.0)
+    assert position.status == EN_ROUTE
+    assert position.bearing == pytest.approx(90.0, abs=1e-6)
+    assert position.speed_kmh is not None
+    assert position.speed_kmh > 0.0
+    # Same segment, same distance/duration -> the same speed at every
+    # point within it (a constant-speed assumption, not a curve).
+    position_later_in_segment = compute_position_at(schedule, 150.0)
+    assert position_later_in_segment.speed_kmh == pytest.approx(position.speed_kmh)
+
+
+def test_compute_position_at_completed_has_no_bearing_or_motion(three_stop_schedule):
+    schedule, _ = three_stop_schedule
+    position = compute_position_at(schedule, 420.0)
+    assert position.status == COMPLETED
+    assert position.bearing is None
+    assert position.speed_kmh == 0.0
+
+
+def test_compute_position_at_single_stop_schedule_has_no_bearing():
+    """No second stop to face -> bearing is None even while `not_started`,
+    not a fabricated direction."""
+    s1 = uuid.uuid4()
+    schedule = _schedule(
+        ScheduleStop(s1, 1, 5.0, 5.0, arrival_offset_s=0, departure_offset_s=0)
+    )
+    at_start = compute_position_at(schedule, -5.0)
+    assert at_start.bearing is None
+    assert at_start.speed_kmh == 0.0
+
+
+def test_compute_position_at_bearing_is_normalized_degrees(three_stop_schedule):
+    schedule, _ = three_stop_schedule
+    for elapsed_s in (-10.0, 0.0, 10.0, 110.0, 210.0, 420.0, 1000.0):
+        position = compute_position_at(schedule, elapsed_s)
+        if position.bearing is not None:
+            assert 0.0 <= position.bearing < 360.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: compute_bearing (simulation.geo)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_bearing_due_north_is_zero():
+    a = Point(0.0, 0.0)
+    b = Point(1.0, 0.0)
+    assert compute_bearing(a, b) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_compute_bearing_due_east_is_ninety():
+    a = Point(0.0, 0.0)
+    b = Point(0.0, 1.0)
+    assert compute_bearing(a, b) == pytest.approx(90.0, abs=1e-6)
+
+
+def test_compute_bearing_due_south_is_180():
+    a = Point(1.0, 0.0)
+    b = Point(0.0, 0.0)
+    assert compute_bearing(a, b) == pytest.approx(180.0, abs=1e-6)
+
+
+def test_compute_bearing_due_west_is_270():
+    a = Point(0.0, 1.0)
+    b = Point(0.0, 0.0)
+    assert compute_bearing(a, b) == pytest.approx(270.0, abs=1e-6)
+
+
+def test_compute_bearing_identical_points_is_defined_not_raising():
+    p = Point(33.6844, 73.0479)
+    # Degenerate but must not raise - see compute_bearing's docstring.
+    assert compute_bearing(p, p) == pytest.approx(0.0, abs=1e-6)

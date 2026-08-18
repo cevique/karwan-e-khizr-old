@@ -17,6 +17,7 @@ from api.transit.journeys import router as journeys_router
 from api.transit.realtime.control_router import (
     router as realtime_simulation_control_router,
 )
+from api.transit.realtime.eta_router import router as realtime_eta_router
 from api.transit.realtime.router import router as realtime_router
 from api.transit.router import router as transit_router
 from api.transit.vehicles.router import router as vehicles_router
@@ -30,10 +31,12 @@ api_router.include_router(transit_router)
 api_router.include_router(journeys_router)
 
 # Realtime + simulation (Claude A workstream). `vehicles_router` (roster:
-# "what vehicles/trips exist") and `realtime_router` (public, read-only
-# "where is this vehicle right now") are always safe to mount.
+# "what vehicles/trips exist"), `realtime_router` (public, read-only
+# "where is this vehicle right now"), and `realtime_eta_router` (Phase 4:
+# per-stop ETAs for a vehicle's current trip) are always safe to mount.
 api_router.include_router(vehicles_router)
 api_router.include_router(realtime_router)
+api_router.include_router(realtime_eta_router)
 
 # Dev/demo simulation control (start/stop a trip, force a position
 # snapshot, etc.) - intentionally unauthenticated, as designed: see

@@ -542,7 +542,362 @@ after verification.
 
 ---
 
+# SESSION HANDOFF — Phase 4 COMPLETE, NOT YET LIVE-VERIFIED (2026-08-17, agent handoff)
+
+## Status: Phase 4 (Enhanced Realtime API) is code-complete and passing in a sandbox
+## with no Docker/no live Windows environment. **This has NOT been verified against a
+## real Docker Postgres/PostGIS environment by this agent** - that verification is
+## expected to happen next, by OpenCode, the same way it verified Phase 3.
+
+**Test baseline this session: 500 passed, 0 failed, 0 skipped, in a manually-installed
+(non-Docker) Postgres 16 + PostGIS sandbox** (464 Phase-3-verified baseline + 36 new
+Phase 4 tests). No skips this session because this sandbox DOES have a real, reachable
+Postgres (unlike the original Phase 3 authoring session) - unlike route geometry, Phase
+4 needed no external network service (no Nominatim, no OSRM), so there was nothing this
+sandbox categorically couldn't reach. The one thing still unverified is whether these
+same 36 tests pass identically against the actual Docker Postgres/PostGIS environment
+OpenCode used for Phase 1-3 - there is no specific reason to expect a difference (same
+PostGIS version family, same SQL), but it has not been checked directly.
+
+## What Is Done (Phase 4, all in this session's tree)
+
+**Database changes: none** (plan.md section M confirms Phase 4 needs none - correct,
+verified: no new migration was added or needed).
+
+### New files
+- `api/transit/realtime/eta_router.py` — `GET /transit/realtime/vehicles/{vehicle_id}/eta`
+  (plan.md section G/H/I). Kept as its own router (not folded into `router.py`) purely
+  to match the file plan.md's Phase 4 list names. Returns every `StopTime` on the
+  vehicle's current trip with `sequence >=` the sequence of `next_stop_id` (or
+  `current_stop_id` for the single-stop-schedule edge case where there's no next stop
+  but the trip also isn't `completed`); `etas: []` once `status == "completed"` - not
+  an error. `404` under the same condition as `GET /vehicles/{vehicle_id}` (no active
+  position). `estimated_arrival` always equals `scheduled_arrival` and
+  `delay_seconds` is always `0.0` (plan.md section I: a simulated vehicle IS the
+  schedule, no independent "actual" position exists to diverge from it).
+- `tests/test_engine_geometry_interpolation.py` — 12 pure tests (no DB) for
+  `simulation.geo.point_along_polyline` and `compute_position_at`'s new
+  `route_geometry` parameter: following a bend vs. a straight chord, bearing matching
+  the local polyline segment (not the overall stop-to-stop bearing), clamping,
+  `route_geometry=None` reproducing pre-Phase-4 behavior byte-for-byte (the explicit
+  regression guard for "additive, not a replacement"), and falling back to
+  straight-line when the supplied geometry doesn't actually cover the stop pair in
+  order (never fabricates a wrong-direction position).
+- `tests/test_enhanced_realtime.py` — 13 DB-backed tests against the REAL `main.app`
+  (unlike the older `tests/test_realtime_api.py`, which builds its own isolated mini
+  app) with `get_session` overridden - this also proves `eta_router`/`router.py` are
+  correctly mounted via `api/router.py`, not just that the underlying functions work.
+  Covers: route/stop name resolution, bearing on a known-direction route, speed
+  non-negativity, delay always exactly `0.0` when a next stop exists, all
+  next-stop/ETA/delay/bearing fields `None` together for a `completed` trip, a
+  route WITH real `Route.path` geometry set directly in the DB actually changing the
+  reported bearing (proves `simulation.provider._load_route_geometry` wiring works,
+  not just the pure engine math), a route with NO geometry (today's universal real
+  case) behaving exactly as before, and the new ETA endpoint's 404/ordering/
+  completed-trip-is-empty/scheduled-arrival-cross-check behavior.
+
+### Modified files
+- `simulation/geo.py` — added `compute_bearing` (great-circle initial bearing,
+  degrees, normalized `[0, 360)`) and `point_along_polyline` (snap-`start`/`end` to
+  their nearest polyline vertex by straight-line distance, then interpolate by arc
+  length between those two vertices - **documented simplification**: nearest-VERTEX,
+  not nearest-point-on-segment, acceptable at OSRM's typical vertex density, same
+  spirit as this file's pre-existing `interpolate_point` simplification). Returns
+  `None` (never fabricates) when `end`'s nearest vertex isn't strictly after
+  `start`'s, or when both snap to the same vertex.
+- `simulation/engine.py` — `SimulatedPosition` gained `bearing: float | None` and
+  `speed_kmh: float | None`. `compute_position_at` gained an optional
+  `route_geometry: list[Point] | None = None` parameter (plan.md's own pseudocode
+  used `list[tuple[float,float]]`; used the more specific `Point` - a `NamedTuple`
+  subclass of `tuple[float,float]`, so still satisfies that shape - for consistency
+  with every other `simulation.*` signature). Bearing: `None` whenever
+  `next_stop_id is None` (case 2 `completed`, or a degenerate single-stop schedule in
+  case 1); cases 1/3 (stationary) use a straight current-to-next-stop bearing; case 4
+  (`en_route`) uses `point_along_polyline`-derived bearing when `route_geometry`
+  actually covers the segment, else falls back to the same straight bearing. Speed:
+  `0.0` whenever stationary (cases 1-3); in case 4, the CONSTANT implied speed of the
+  whole current inter-stop segment (straight-line/haversine distance ÷ segment
+  duration) - deliberately NOT recomputed from the road-following distance even when
+  `route_geometry` is used for position/bearing, because
+  `simulation.timing.compute_stop_time_offsets` already derived that segment's
+  duration from the SAME straight-line distance assumption (see that module's
+  docstring) - reporting a longer road-distance-based speed here would be
+  inconsistent with the schedule the position itself is honoring, not more accurate.
+  `route_geometry=None` (the default) reproduces every byte of pre-Phase-4 behavior -
+  regression-tested explicitly in `tests/test_engine_geometry_interpolation.py`.
+- `simulation/provider.py` — new `_load_route_geometry(session, route_id)` loads
+  `Route.path` via `ST_AsGeoJSON` (same extraction pattern `api/transit/router.py`
+  and `simulation/trip_builder.py` already use for the identical GeoAlchemy2-WKB
+  problem) and converts GeoJSON's `[longitude, latitude]` pairs to
+  `simulation.geo.Point`'s `(latitude, longitude)` order right at this DB-facing
+  boundary - documented explicitly so every other file under `simulation/` can stay
+  `(lat, lon)`-only throughout, matching `Point`'s own convention, with the one
+  GeoJSON `(lon, lat)` quirk contained to this one function (mirrors how Phase 3's
+  handoff called out the same quirk for `seeding.route_geometry`).
+  `SimulatedVehicleLocationProvider._position_for_trip` now calls it per trip and
+  passes the result through to `compute_position_at`. Since Phase 3 verified 0 real
+  routes currently have geometry, this returns `None` for essentially every real trip
+  today - inert in production data, but wired correctly (see
+  `tests/test_enhanced_realtime.py`'s DB-level geometry test, which sets `Route.path`
+  directly to prove the wiring rather than waiting for real data to exist).
+- `api/transit/realtime/schemas.py` — `VehiclePositionRead` extended with
+  `route_short_name`, `route_color`, `bearing`, `speed_kmh`, `current_stop_name`,
+  `next_stop_name`, `scheduled_arrival_next_stop`, `estimated_arrival_next_stop`,
+  `delay_seconds` (all optional/nullable, matching plan.md section G's example
+  response shape exactly) - purely additive, no existing field removed or retyped.
+  New `ETARead`/`VehicleETAList`.
+- `api/transit/realtime/router.py` — every handler now also takes
+  `session: AsyncSession = Depends(get_session)` (same dependency
+  `api/transit/router.py` already uses) purely to batch-resolve the new display
+  fields a bare `SimulatedPosition` doesn't carry - stop names, route short_name/
+  color, and each active trip's next-stop `StopTime.arrival_offset_s`. Exactly 3
+  extra queries total per request (stop names, route info, StopTime offsets), never
+  N+1 - same batching discipline `api/transit/router.py`'s route-detail endpoint
+  already follows. Deliberately did NOT push this into the `VehicleLocationProvider`
+  Protocol (documented explicitly in the module docstring): a position's identity
+  (where/status/bearing/speed) is the provider's job and must stay swappable for a
+  future real-GPS provider (plan.md section J); resolving how a UUID displays is an
+  ordinary API-presentation concern this router already owned for other reasons.
+  `scheduled_arrival_next_stop` is derived from `position.as_of - elapsed_s`
+  (`== Trip.scheduled_start_time`) plus the next stop's `arrival_offset_s` - no
+  second `Trip` query needed, since `SimulatedPosition` already carries everything
+  required to reconstruct it.
+- `api/router.py` / `api/transit/realtime/__init__.py` — wired `realtime_eta_router`
+  in alongside `realtime_router`/`vehicles_router` (both already always-safe-to-mount,
+  same category); updated the module docstring's integration-note code sample to
+  match.
+- `tests/test_simulation_engine.py` — added `bearing`/`speed_kmh` assertions to the
+  existing fixtures (not-started/at-stop/en-route/completed/single-stop cases) plus
+  standalone `compute_bearing` unit tests (north/east/south/west/degenerate-identical
+  -points cases).
+
+## Design decisions worth flagging for the next agent
+
+1. **Where "compute bearing" lives.** plan.md's Phase 4 file list attributes bearing
+   to BOTH `engine.py` ("Add bearing computation") and `router.py` ("Compute
+   bearing, load stop names"), which read as possibly overlapping. Read this as
+   `engine.py` owning the actual geometry math (kept there deliberately - it's a
+   pure, DB-free computation the existing architecture already isolates in exactly
+   that module) and `router.py` only surfacing the value the engine already
+   computed, alongside the display-name lookups it was already going to need. If a
+   future agent disagrees and wants `router.py` to independently recompute/override
+   bearing, that would duplicate `simulation.geo.compute_bearing` for no clear
+   benefit - flagging so it's a deliberate choice to revisit, not an oversight.
+2. **`speed_kmh` uses the straight-line segment distance, never the road-following
+   one**, even when `route_geometry` is present and used for position/bearing - see
+   `simulation/engine.py`'s modified docstring for the full reasoning (in short:
+   `compute_stop_time_offsets` already fixed this segment's DURATION using the
+   straight-line/`distance_along_route_m` assumption; recomputing speed from a
+   longer road distance over that same fixed duration would just be a different,
+   inconsistent number, not a more accurate one).
+3. **`api/router.py` was modified**, even though earlier phases' handoffs describe it
+   as belonging to "whoever reconciles the three workstreams" / out of a single
+   workstream's ownership bounds. Necessary here because Phase 4 explicitly adds a
+   new endpoint (`GET /vehicles/{id}/eta`) that has to actually be reachable to
+   satisfy the phase's stated goal - an unmounted router isn't a completed feature.
+   Kept the change minimal (three lines: one import, one `include_router` call) and
+   updated the two docstrings (`api/router.py`'s own comment,
+   `api/transit/realtime/__init__.py`'s integration note) that referenced the old
+   two-router state, so they don't go stale.
+4. **Did not touch `simulation/timing.py`** - plan.md section F explicitly says "No
+   changes for routes with real timetable data... `compute_stop_time_offsets()`
+   remains available for demo-trip creation," and nothing in Phase 4's actual file
+   list or goal required a change there. Confirmed by reading it fully before
+   deciding not to touch it, not by assumption.
+5. **Nothing in `docs/*.md` was updated this session** - Phase 4 adds no new external
+   dependency, no new data-quality finding, and no change to what's geocoded/
+   geometry-generated; there was nothing accurate to add to `DATA_GAPS.md`/
+   `SOURCES.md` that Phase 2/3's entries don't already cover. Flagging the absence
+   explicitly so it reads as a decision, not an omission.
+
+## Why this could not be live-verified against Docker this session
+
+This agent's sandbox has no Docker and no ability to reach a Windows host - same
+categorical limitation every prior authoring-agent session in this plan.md has noted
+(Phase 3's authoring session, Phase 2's live-geocoding gap, etc.). What COULD be done
+without Docker WAS done, and unlike Phase 2/3, that turned out to be everything Phase
+4 needs, because Phase 4 requires no external network service (no Nominatim, no OSRM)
+and no schema change - the only new failure mode Docker's real PostGIS could surface
+that this sandbox's manually-installed Postgres 16 + PostGIS couldn't is a genuine
+PostGIS version/behavior mismatch, which is low-probability but NOT zero, and is why
+this is marked "not yet live-verified" rather than "verified":
+
+- `python -m py_compile` on every new/changed file: clean.
+- `pytest --collect-only`: all 500 tests collect with zero import errors.
+- **Full suite run against a real (non-Docker) Postgres 16 + PostGIS: 500 passed, 0
+  failed, 0 skipped** (464 baseline + 36 new). This is a stronger signal than Phase
+  3's original authoring session had (which could only report 220 passed / 242
+  skipped, since it had no reachable Postgres at all) - but it is still not the same
+  Docker Postgres/PostGIS environment OpenCode verified Phase 1-3 against.
+- Did NOT run the live app (`uvicorn main:app`) and hit the new endpoints with a real
+  HTTP client outside of pytest's `ASGITransport` - only in-process ASGI requests
+  were exercised. `ASGITransport` genuinely runs the full FastAPI dependency-
+  injection/routing stack (this is not a mocked shortcut), but a real process
+  boundary (real sockets, real uvicorn) was not exercised.
+- Did NOT verify against the actual 88/122-located, 0-geometry real dataset from
+  Phase 1-3's live runs - every DB-backed test here builds its own small synthetic
+  agency/route/stops/trip, the same convention every other test file in this suite
+  (`test_realtime_api.py`, `test_route_geometry.py`, etc.) already uses. This is
+  consistent with the existing test suite's own established pattern, not a shortcut
+  specific to this session.
+
+## What the next verification session (OpenCode) should run
+
+```
+# From an environment with Docker + a reachable Postgres/PostGIS (no OSRM/Nominatim
+# needed for Phase 4 specifically - only if re-verifying Phase 2/3 too):
+alembic upgrade head          # confirms d4e5f6a7b8c9 is still the head - no new
+                               # migration was added for Phase 4, so this should be a
+                               # no-op if the DB is already there from Phase 3
+pytest -q                     # expect 500 passed, 0 failed, 0 skipped
+pytest tests/test_engine_geometry_interpolation.py tests/test_enhanced_realtime.py \
+       tests/test_simulation_engine.py -q   # the Phase-4-specific subset in isolation
+```
+
+If the DB is currently sitting at the Phase 1-3 real-data baseline (2 agencies, 122
+stops, 26 routes, 275 trips, etc.) rather than empty, remember the operational gotcha
+every prior phase's handoff has repeated: pytest assumes an EMPTY baseline (rolled-
+back transactions on top of empty tables) - clean `stop_times → trips → route_stops →
+routes → stops → agencies` first, or the several tests elsewhere in the suite that
+assert exact row counts / empty-list responses will fail for reasons unrelated to
+Phase 4.
+
+Beyond running the suite, worth spot-checking live (via `curl`/httpie against a
+running `uvicorn main:app`, with at least one trip actually started via
+`POST /api/transit/realtime/simulation/...`):
+- `GET /api/transit/realtime/vehicles` returns `bearing`/`speed_kmh`/
+  `route_short_name`/`current_stop_name` populated (not `null` for a route/stops
+  that actually exist).
+- `GET /api/transit/realtime/vehicles/{id}/eta` returns a plausible per-stop list
+  for a real trip, with `delay_seconds: 0.0` throughout.
+- If ever a real route acquires geometry (currently 0 do - see Phase 3's handoff),
+  re-run this and confirm the vehicle position visibly follows the polyline rather
+  than cutting straight lines between stops; there is no way to demonstrate this
+  against real data until that precondition is met.
+
+## What Remains
+
+### Later phases (see §M, unchanged)
+- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint.
+- **Phase 6** Frontend contract finalization (route geometry in journey legs, CORS,
+  documented response shapes).
+
+## Active Todo List (for next agent)
+- [x] Phase 1 import pipeline + migrations + tests (431 passed)
+- [x] Phase 2 geocoding service + script + provenance + tests + live run
+      (447 passed, 88/122 stops located)
+- [x] Phase 3 OSRM route geometry service + script + provenance columns + API
+      exposure + tests + live-verified against real Docker PostGIS + OSRM
+      (464 passed, 0 real routes eligible - correct, honest outcome)
+- [x] Phase 4 enhanced realtime API (bearing/speed/route+stop names/ETA/delay) +
+      optional Route.path polyline interpolation in `simulation/engine.py` + tests
+      (500 passed in a non-Docker sandbox; NOT yet verified against Docker)
+- [x] Phase 4 follow-up: verified against real Docker Postgres/PostGIS + live
+      uvicorn spot-check (500 passed / 0 failed / 0 skipped; see the
+      "Phase 4 VERIFIED" section below)
+- [ ] Phase 5: admin daily-trip generation endpoint + tests
+- [ ] Phase 6: frontend API contract finalization + tests
+- [ ] Remember: clean transit tables before pytest after running any
+      import/enrichment script that commits
+
+---
+
+# SESSION HANDOFF — Phase 4 VERIFIED (2026-08-18, verification agent / OpenCode)
+
+## Status: Phase 4 (Enhanced Realtime API) verified against a live Docker
+## PostgreSQL/PostGIS + a real uvicorn process. **500 tests pass, 0 failures,
+## 0 skips** — identical to the authoring session's sandbox result, now confirmed
+## against the same Docker environment OpenCode used for Phases 1–3.
+
+## Environment used for this verification
+
+- Windows 10, Docker Desktop running; `postgis/postgis:16-3.4` container started
+  via the repository's existing `backend/docker-compose.yml` (no new/foreign DB
+  setup was created). Python 3.13.3, `backend/.venv`, commands run from CMD.
+- DB was at the empty pytest baseline (all tables 0 rows, alembic at
+  `d4e5f6a7b8c9`) when verification started.
+
+## Test results
+
+- **Full suite** (`pytest -q`): **500 passed, 0 failed, 0 skipped** (~3–4 min).
+  Run twice — once on the empty baseline and once after the live spot-check data
+  was cleaned up — both identical.
+- **Phase 4 subset** (`pytest tests/test_engine_geometry_interpolation.py
+  tests/test_enhanced_realtime.py tests/test_simulation_engine.py -q`):
+  **59 passed** (12 geometry-interpolation + 13 enhanced-realtime + 34
+  simulation-engine). All 13 DB-backed `test_enhanced_realtime.py` tests
+  executed against the REAL Docker PostGIS (they carry a `_database_reachable`
+  guard that would have skipped them otherwise) — none skipped, including the
+  synthetic-geometry wiring test `test_vehicle_position_follows_route_geometry_
+  when_present`, which sets `Route.path` directly in the real DB.
+- No test was weakened, deleted, or skipped to make the suite pass — nothing
+  needed fixing. The only code changes in this tree are Claude's Phase 4
+  implementation plus the plan.md handoff (this section).
+
+## Migration status
+
+- `alembic upgrade head` is clean/idempotent: a no-op on this DB (already at
+  `d4e5f6a7b8c9`).
+- Exactly **one** Alembic head: `d4e5f6a7b8c9` (add route geometry provenance,
+  the Phase 3 migration). Linear chain, no unexpected migration changes, no new
+  migration for Phase 4 (correct — plan.md section M says Phase 4 needs none).
+
+## Live HTTP spot-check (real uvicorn, real sockets — the gap the authoring
+## session explicitly could not close)
+
+1. Imported the real canonical dataset (`scripts/import_transit_data.py
+   --service-date 2026-08-18`): 2 agencies, 122 stops, 26 routes, 115
+   route_stops, 275 trips, 6242 stop_times — identical to Phases 1–3.
+2. **Confirmed the "no real geometry" precondition**: all 26 routes have
+   `path IS NULL` and `geometry_source IS NULL`. Stop-coordinate coverage by
+   route (import-only, before any geocoding): FR-01 0/26, FR-04 0/25, FR-07
+   0/23, FR-14 0/18, Red Line 12/23. No real route has its full stop sequence
+   located, so `Route.path` NULL for every real route is the correct, honest
+   state — treated as expected, not a failure (matches Phase 3's handoff).
+3. Started `uvicorn main:app` (real process, port 8000) against Docker PostGIS;
+   lifespan routing-graph build succeeded.
+4. Built a throwaway route `P4-CHK` from two REAL SEED_DATUM stops (Ammar Chowk,
+   Bank Road) + a vehicle — the same pattern Phase 3's verification used for its
+   throwaway geometry route. Started a trip via the real
+   `POST /api/transit/realtime/simulation/routes/{id}/demo-trip` endpoint
+   (status `active`, vehicle assigned).
+5. `GET /api/transit/realtime/vehicles` and `GET /api/transit/realtime/vehicles
+   /{id}` returned all enhanced fields populated over real HTTP:
+   `route_short_name` ("P4-CHK"), `route_color` ("#00FF00"), `bearing`
+   (335.18° — the correct Ammar Chowk→Bank Road heading), `speed_kmh` (20.0,
+   matching the configured 20 km/h), `current_stop_name`/`next_stop_name`
+   ("Ammar Chowk"/"Bank Road"), `scheduled_arrival_next_stop` ==
+   `estimated_arrival_next_stop`, and `delay_seconds: 0.0`.
+6. `GET /api/transit/realtime/vehicles/{id}/eta` returned exactly the one
+   upcoming stop (Bank Road, sequence 2), `delay_seconds: 0.0`, scheduled ==
+   estimated — and `404` for a non-existent vehicle id.
+7. **Geometry wiring proven live**: set a bending `Route.path` LINESTRING on the
+   throwaway route directly in PostGIS (no OSRM needed — real road geometry was
+   NOT fabricated; this is the documented synthetic-path proof). The vehicle's
+   bearing changed from 335° (straight stop-to-stop chord) to ~90° (following
+   the polyline's first leg) and its location moved east along the polyline —
+   proving `simulation.provider._load_route_geometry` → `compute_position_at(
+   route_geometry=...)` → `point_along_polyline` end-to-end in production code
+   against real PostGIS. With `path` reset to NULL (the real-data case), the
+   bearing returns to the straight-line value — the `route_geometry=None`
+   backward-compatible path verified live too.
+8. Everything was torn down: uvicorn stopped, throwaway route/vehicle/trip
+   removed, all transit tables truncated back to the empty pytest baseline, and
+   the full suite re-run green afterwards.
+
+## What remains
+
+- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint (plan.md
+  section M-Phase 5). Not started, per the verification brief.
+- The only thing that would change the "0 real routes have geometry" state is
+  resolving the ~34 UNKNOWN stops (e.g. `Peshawar Morr (Interchange)` for the
+  Red Line) so `scripts/generate_route_geometry.py` finds eligible routes; that
+  is a data/enrichment task, not Phase 4 work.
+
+---
+
 ### What Already Exists and Can Be Reused (Everything)
+
 
 | Subsystem | Status | Reuse? |
 |-----------|--------|--------|

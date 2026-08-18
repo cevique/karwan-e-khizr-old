@@ -26,17 +26,20 @@ calls an HTTP API) simply wouldn't use `session_factory` at all.
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
-from sqlalchemy import select
+from geoalchemy2 import Geometry
+from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Trip
+from db.models import Route, Trip
 from db.session import AsyncSessionLocal
 from simulation.engine import SimulatedPosition, compute_position_at
+from simulation.geo import Point
 from simulation.trip_builder import load_trip_schedule
 
 # Matches `db.session.AsyncSessionLocal`'s shape (an async context manager
@@ -119,6 +122,36 @@ async def fetch_trips(
     return list(result.scalars().all())
 
 
+async def _load_route_geometry(
+    session: AsyncSession, route_id: uuid.UUID
+) -> list[Point] | None:
+    """`Route.path` (Phase 3, plan.md section D) as an ordered list of
+    `simulation.geo.Point`s, or `None` when the route has no geometry yet
+    (the common case today - see `plan.md`'s Phase 3 handoff: 0 real
+    routes currently have geometry, since no route's full stop sequence
+    is located).
+
+    `ST_AsGeoJSON` extraction mirrors `api/transit/router.py`'s
+    `_route_geometry_json_expr()` (same reason: GeoAlchemy2 loads
+    `Route.path` as an opaque WKB element, not something plain Python can
+    read coordinates off directly). GeoJSON LineString coordinates are
+    `[longitude, latitude]` pairs; `simulation.geo.Point` is
+    `(latitude, longitude)` - the conversion happens right here, at this
+    DB-facing boundary, so every other file in `simulation/` - including
+    `simulation.engine`, which receives the already-converted list - can
+    stay in `(lat, lon)` order throughout, matching `Point`'s own
+    convention.
+    """
+    result = await session.execute(
+        select(func.ST_AsGeoJSON(cast(Route.path, Geometry))).where(Route.id == route_id)
+    )
+    path_json = result.scalar_one_or_none()
+    if path_json is None:
+        return None
+    coordinates = json.loads(path_json)["coordinates"]
+    return [Point(latitude=lat, longitude=lon) for lon, lat in coordinates]
+
+
 class SimulatedVehicleLocationProvider:
     """`VehicleLocationProvider` implementation backed by the deterministic
     simulation engine.
@@ -154,9 +187,20 @@ class SimulatedVehicleLocationProvider:
         schedule = await load_trip_schedule(session, trip.id)
         if schedule is None:
             return None
+        # Phase 4 (plan.md section F): pass the route's real geometry
+        # through when it has any, so `compute_position_at` follows the
+        # road instead of a straight line - a pure `None` (most routes
+        # today) reproduces the pre-Phase-4 straight-line behavior
+        # exactly, so this is additive, not a behavior change for the
+        # common case.
+        route_geometry = await _load_route_geometry(session, trip.route_id)
         elapsed_s = (now - trip.scheduled_start_time).total_seconds()
         return compute_position_at(
-            schedule, elapsed_s, vehicle_id=trip.vehicle_id, as_of=now
+            schedule,
+            elapsed_s,
+            vehicle_id=trip.vehicle_id,
+            as_of=now,
+            route_geometry=route_geometry,
         )
 
     async def get_vehicle_position(
