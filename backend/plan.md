@@ -896,6 +896,373 @@ running `uvicorn main:app`, with at least one trip actually started via
 
 ---
 
+# SESSION HANDOFF — Phase 5 COMPLETE (2026-08-18, agent handoff)
+
+## Status: Phase 5 (Trip Generation Admin Endpoint) is implemented and passing
+## in a sandbox with a real (non-Docker) PostgreSQL/PostGIS AND a real
+## `uvicorn` process reached over real HTTP with real admin auth. **Not yet
+## verified against the actual Docker Postgres/PostGIS environment** OpenCode
+## used for Phases 1-4 - same category of gap Phase 4's authoring session had,
+## closed here further than Phase 4's authoring session could close it (this
+## session did reach a real HTTP server, unlike Phase 4's authoring session),
+## but still not the specific Docker environment.
+
+**Test baseline this session: 515 passed, 0 failed, 0 skipped** (500 Phase-4-
+verified baseline + 15 new Phase 5 tests), run twice consecutively for
+stability, plus a live spot-check against a real `uvicorn` process (details
+below). DB confirmed clean (all tables 0 rows) after every run in this
+session.
+
+## What Is Done (Phase 5)
+
+**Database changes: none** (plan.md section M says Phase 5 needs none -
+confirmed correct: `alembic upgrade head` was already a no-op at `d4e5f6a7b8c9`
+before any Phase 5 work, and still is after it - no migration was added).
+
+### New files
+- `seeding/trip_generator.py` — the only new module. Deliberately does NOT
+  reimplement Trip/StopTime creation: it finds which ONE route's slice of the
+  canonical `docs/transit_data.json` dataset to hand to the EXISTING,
+  already-tested `seeding.importer.import_dataset`/`_import_trip_patterns`
+  (Phase 1) for a NEW `service_date`, so an admin can regenerate a single
+  route's day without re-touching the other 25 routes or re-running the whole
+  import script. Three functions:
+  - `find_import_route(dataset, route, agency_name)` — matches an existing DB
+    `Route` row to the dataset's `ImportRoute` entry by `(agency name,
+    short_name)`, the EXACT SAME identity `seeding.importer._get_or_create_route`
+    already uses during import. Returns `None` if the route isn't in the
+    dataset at all (e.g. created via the generic `/admin/import` endpoint with
+    non-canonical data).
+  - `dataset_for_route(dataset, route_ref)` — slices a full `ImportDataset`
+    down to exactly one route's agency/stops/route/route_stops/trip_patterns/
+    trip_stop_times, so the returned `ImportReport` is about that one route,
+    not a "26 routes matched" no-op report on every call.
+  - `generate_daily_trips(session, route, agency_name, service_date, *,
+    dataset=None)` — orchestrates the two above, then calls
+    `import_dataset(session, scoped_dataset, allow_routes_without_stops=True,
+    service_date=service_date)`. Raises `NoCanonicalTripPattern` (defined in
+    this module) if the route has no matching `ImportTripPattern` - see "Never
+    fabricates" below. `dataset` defaults to loading the real
+    `docs/transit_data.json` (`DEFAULT_TRANSIT_DATA_PATH`) when not given;
+    tests pass a small synthetic one instead so most of them don't depend on
+    the real file's specific numbers.
+- `tests/test_trip_generation.py` — 15 tests: pure dataset-slicing logic (6),
+  `generate_daily_trips` against a synthetic dataset + real DB (5: correct
+  count/offsets, idempotency, distinct-service-dates non-collision, two
+  distinct "no pattern" failure modes), and HTTP-level tests against a bare
+  admin-only test app (4: 404 for a nonexistent route, 404 for a real route
+  with no pattern [Red Line, via the REAL dataset], 422 for a malformed
+  request, and - the plan's own literal acceptance check - generating FR-04's
+  real canonical pattern and asserting `trips_created == 97`, plus an
+  HTTP-level idempotency check on FR-01).
+
+### Modified files
+- `api/admin/schemas.py` — added `TripGenerationRequest` (`route_id`,
+  `service_date`), `TripGenerationResponse` (route id/short_name/service_date
+  plus `trips_created`/`trips_replaced`/`stop_times_created` - a scoped-down
+  `ImportReport`, not the full one), `TripGenerationRejectedResponse` (404
+  body shape).
+- `api/admin/router.py` — added `POST /trips/generate`. Looks up the `Route`
+  by id (404 if missing), fetches its agency's name with a plain `select`
+  (NOT `route.agency` - a lazy relationship this async session won't
+  implicitly resolve), calls `seeding.trip_generator.generate_daily_trips`,
+  maps `NoCanonicalTripPattern` -> 404 and `ImportValidationError` -> 422.
+  Module docstring's one-line summary updated to mention this endpoint.
+  **Did NOT touch `api/router.py`** - unlike Phase 4 (which had to, to mount
+  a brand-new router), this endpoint is just one more route on the ALREADY-
+  mounted `admin_router` object (see `api/router.py`'s existing
+  `api_router.include_router(admin_router, dependencies=[Depends(require_role(
+  ROLE_ADMIN))])`), so it inherits admin-only gating automatically with zero
+  changes to the aggregator - confirmed live (see below), not assumed.
+
+## Design decisions worth flagging for the next agent
+
+1. **"Verify correct count (97)" in plan.md's Phase 5 test spec is NOT a stale
+   placeholder** - I checked `docs/transit_data.json` directly before assuming
+   otherwise (the Phase 1 M-section's "97 stops"/"28 routes" wording IS stale,
+   left over from an early draft before the real dataset grew to 122 stops/26
+   routes - but FR-04's `total_trips_per_day` really is 97 in the actual file
+   today). `tests/test_trip_generation.py::test_generate_trips_endpoint_fr04_
+   matches_real_canonical_pattern_count` asserts this against the live file
+   rather than hardcoding it blind, so it fails loudly if that ever changes.
+2. **Never falls back to `simulation.trip_builder.build_trip_for_route`** for
+   a route with no canonical pattern. That function (Phase 3/4's demo-trip
+   path, still used unchanged by `control_router.py`) generates a
+   SIMULATED/speed-derived schedule and is exactly the kind of thing the task
+   brief says to keep "clearly distinguished" from real transit data - Phase 5
+   returns 404 instead of silently blending the two. Confirmed which routes
+   this actually affects by inspecting the real file: only FR-01, FR-04,
+   FR-07, FR-14 have a `trips[]` entry; every other route (including Red Line,
+   which HAS real stops/route_stops, just no researched timetable) gets 404.
+3. **`generate_daily_trips`'s `dataset` parameter, not a hardcoded internal
+   load.** Defaults to the real file so the endpoint's actual behavior needs
+   no test-only code path, but every unit-level test passes a tiny synthetic
+   dataset instead (only 4 tests touch the real 122-stop/275-trip file, and
+   only because they specifically need to). Keeps most of the suite fast and
+   decoupled from the real dataset's specific numbers changing later.
+4. **Route resolution is `(agency name, short_name)`, not the dataset's
+   internal `ref`.** `Route` (the DB model) has no `ref` column (unlike
+   `Stop`) - only `Stop` needed one, to disambiguate same-named stops (Phase 1
+   handoff). Routes don't have that name-collision problem in the current
+   dataset, so matching on the same `(agency_id, short_name)` uniqueness
+   `seeding.importer._get_or_create_route` already relies on was the more
+   consistent choice over inventing a new `Route.ref` column Phase 5 doesn't
+   otherwise need.
+5. **`api/admin/router.py`'s own module docstring still says "NOT registered
+   on the main application"** - that's now false (see `api/router.py`:
+   `admin_router` IS mounted, gated by `require_role(ROLE_ADMIN)`), but this
+   predates Phase 5 and isn't this phase's file to fix per the task's "Phase 5
+   only" scope - flagging it as a pre-existing stale comment I noticed but
+   left alone, not something Phase 5 introduced or is responsible for.
+
+## What was verified, and how
+
+- **Full suite, twice consecutively**: 515 passed, 0 failed, 0 skipped both
+  times (~71s each). DB confirmed empty (0 rows in `stops`/`trips`/`agencies`)
+  after each run - every new test uses the same rolled-back SAVEPOINT
+  `db_session` fixture as the rest of the suite; nothing persists.
+- **`alembic upgrade head`**: no-op, still exactly one head (`d4e5f6a7b8c9`) -
+  confirms Phase 5 genuinely added no migration.
+- **Real import + live spot-check against a real `uvicorn` process** (not
+  Docker - this sandbox has none - but a genuinely separate OS process bound
+  to a real socket, reached via `curl`, not `pytest`'s `ASGITransport`):
+  1. `alembic upgrade head` + `scripts/import_transit_data.py --service-date
+     2026-09-01`: 2 agencies, 122 stops, 26 routes, 115 route_stops, 275
+     trips, 6242 stop_times - identical to every prior phase's verified
+     baseline.
+  2. Started `uvicorn main:app` for real; `GET /api/dev/status` confirmed the
+     live data and a loaded routing graph (17 nodes/6 ride/2 walk edges - the
+     same numbers every prior phase's live check has reported).
+  3. Called `POST /api/admin/trips/generate` for FR-04 with NO auth header:
+     got a real `401 Could not validate credentials` - confirmed the new
+     endpoint really does inherit `admin_router`'s existing auth gate over
+     real HTTP, not just in a test's dependency-override setup.
+  4. Registered a real user via `POST /api/auth/register`, promoted it to
+     `role='admin'` directly in Postgres (`get_current_active_user` re-reads
+     the user's role from the DB on every request - no need to re-mint a
+     token), then called the same endpoint with a real `Authorization: Bearer`
+     header for FR-04, `service_date=2026-09-15`:
+     **`200 OK`, `{"trips_created": 97, "trips_replaced": 0,
+     "stop_times_created": 2425}`** (2425 = 97 × 25 stops/trip, FR-04's real
+     stop count) - matching the plan's own acceptance number exactly, and
+     confirmed independently against the database directly
+     (`SELECT COUNT(*) FROM trips WHERE route_id = ... AND
+     scheduled_start_time::date = '2026-09-15'` -> `97`).
+  5. Called the SAME request again: `200 OK`,
+     `{"trips_created": 97, "trips_replaced": 97, ...}` - live confirmation of
+     idempotency (still 97 rows, not 194).
+  6. Called the same endpoint for Red Line (`short_name = "Red"`, a route
+     with real stops but no researched timetable):
+     **`404`**, `"Route 'Red' (agency 'Punjab Mass Transit Authority (PMTA)')
+     has no canonical trip pattern in the dataset - real timetable data
+     exists today only for FR-01, FR-04, FR-07, and FR-14..."` - confirmed
+     live that "no pattern" genuinely 404s rather than fabricating one.
+  7. Cleaned up: deleted the test admin user, truncated
+     `stop_times/trips/route_stops/routes/stops/agencies` back to 0 rows,
+     confirmed via direct query, then re-ran the full suite once more (515
+     passed again) as a final sanity check.
+
+## What could NOT be verified in this environment (for OpenCode)
+
+- **The real Docker Postgres/PostGIS environment specifically.** This
+  sandbox's Postgres is a manually-installed (non-Docker) instance - same
+  category of gap every prior authoring session in this file has had. No
+  specific reason to expect a difference (no new SQL constructs, no schema
+  change at all this phase - the entire risk surface is "does `import_dataset`
+  behave the same," which is Phase-1-tested code, unmodified here), but it is
+  unverified against that specific environment.
+- **A genuinely fresh admin JWT** reflecting the promoted role from creation
+  (this session promoted an EXISTING token's user via direct SQL, since
+  `get_current_active_user` re-checks the DB every request - convenient for
+  a quick sandbox check, but OpenCode's environment may prefer to verify via
+  whatever this project's normal "create an admin user" path is, if one
+  exists beyond direct SQL, for a more representative check).
+- **Windows-specific behavior** (line endings, path separators, etc.) - this
+  sandbox is Linux throughout, same as every prior authoring session.
+
+## What OpenCode should run to verify
+
+```
+# From an environment with Docker + a reachable Postgres/PostGIS:
+alembic upgrade head          # expect: no-op, still d4e5f6a7b8c9 (no new
+                               # migration this phase)
+pytest -q                     # expect: 515 passed, 0 failed, 0 skipped
+pytest tests/test_trip_generation.py -q   # expect: 15 passed, the Phase-5-
+                               # specific subset in isolation
+```
+
+Live HTTP spot-check (mirrors what this session already did, to confirm it
+reproduces against the real Docker environment):
+
+```
+python scripts/import_transit_data.py --service-date <any date>
+uvicorn main:app   # separate terminal/process
+# register a user via POST /api/auth/register, note the token
+# UPDATE users SET role='admin' WHERE email='<that user>'; in psql
+curl -X POST http://localhost:8000/api/admin/trips/generate \
+     -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+     -d '{"route_id": "<FR-04's route id>", "service_date": "2026-09-15"}'
+# expect: 200, trips_created=97, stop_times_created=2425
+# call it again with the same body -> expect trips_replaced=97 (not 194 trips in the DB)
+# try a route with no pattern (e.g. short_name "Red") -> expect 404
+```
+
+As always: clean transit tables (`stop_times, trips, route_stops, routes,
+stops, agencies` - TRUNCATE CASCADE, in that order) before running `pytest`
+again if the live check leaves committed data behind.
+
+## What Remains
+
+### Later phases (see §M, unchanged)
+- **Phase 6** Frontend integration readiness: finalize response schemas
+  (including route geometry in journey legs), CORS, documented shapes across
+  every endpoint. Not started.
+
+## Active Todo List (for next agent)
+- [x] Phase 1 import pipeline + migrations + tests (431 passed)
+- [x] Phase 2 geocoding service + script + provenance + tests + live run
+      (447 passed, 88/122 stops located)
+- [x] Phase 3 OSRM route geometry service + script + provenance columns + API
+      exposure + tests + live-verified against real Docker PostGIS + OSRM
+      (464 passed, 0 real routes eligible - correct, honest outcome)
+- [x] Phase 4 enhanced realtime API (bearing/speed/route+stop names/ETA/delay)
+      + optional Route.path polyline interpolation + tests, live-verified
+      against real Docker PostGIS + real uvicorn by OpenCode (500 passed)
+- [x] Phase 5 admin daily-trip generation endpoint (`seeding.trip_generator`
+      + `POST /admin/trips/generate`) + tests, live-verified against a real
+      (non-Docker) Postgres + real uvicorn + real admin auth in this session
+      (515 passed; FR-04 -> 97 trips confirmed live, matching the plan's own
+      acceptance number)
+- [x] Phase 5 follow-up: verified against the real Docker Postgres/PostGIS
+      environment + a real uvicorn process by OpenCode (515 passed / 0 failed
+      / 0 skipped; see the "Phase 5 VERIFIED" section below)
+- [ ] Phase 6: frontend API contract finalization + tests
+- [ ] Remember: clean transit tables before pytest after running any
+      import/enrichment script or live spot-check that commits
+
+---
+
+# SESSION HANDOFF — Phase 5 VERIFIED (2026-08-18, verification agent / OpenCode)
+
+## Status: Phase 5 (Trip Generation Admin Endpoint) verified against a live
+## Docker PostgreSQL/PostGIS + a real uvicorn process. **515 tests pass, 0
+## failures, 0 skips** — identical to the authoring session's reported result,
+## now confirmed against the same Docker environment OpenCode used for
+## Phases 1–4.
+
+## Environment used for this verification
+
+- Windows 10 + Docker Desktop; `postgis/postgis:16-3.4` container started via
+  the repository's existing `backend/docker-compose.yml` (no new/foreign DB
+  setup). Python 3.13.3, `backend/.venv`, commands run from PowerShell.
+- DB was at the empty pytest baseline (all tables 0 rows, alembic at
+  `d4e5f6a7b8c9`) when verification started.
+
+## Test results
+
+- **Full suite** (`pytest -q`): **515 passed, 0 failed, 0 skipped** (~3.5 min),
+  run twice — once at the start and once after the live spot-check data was
+  cleaned up — both identical.
+- **Phase 5 subset** (`pytest tests/test_trip_generation.py -q`): **15 passed**
+  (6 pure dataset-slicing + 5 synthetic-dataset DB + 4 HTTP-level). All DB-
+  backed tests executed against the real Docker PostGIS (they carry a
+  `_database_reachable` guard that would have skipped them otherwise) — none
+  skipped.
+- **Phase 4 regression subset** (`pytest tests/test_engine_geometry_interpolation.py
+  tests/test_enhanced_realtime.py tests/test_simulation_engine.py -q`):
+  **59 passed** — Phase 4 is not broken by Phase 5.
+- No test was weakened, deleted, or skipped to make the suite pass — nothing
+  needed fixing. Code changes in this tree are Claude's Phase 5 implementation
+  plus this plan.md handoff.
+
+## Migration status
+
+- `alembic upgrade head` is clean/idempotent: a no-op on this DB (already at
+  `d4e5f6a7b8c9`).
+- Exactly **one** Alembic head: `d4e5f6a7b8c9` (Phase 3's route-geometry
+  provenance migration). Linear chain, no new migration for Phase 5 (correct —
+  plan.md section M says Phase 5 needs none).
+
+## Live HTTP spot-check (real uvicorn, real sockets, real admin auth)
+
+1. Imported the real canonical dataset (`scripts/import_transit_data.py
+   --service-date 2026-09-01`): 2 agencies, 122 stops, 26 routes, 115
+   route_stops, 275 trips, 6242 stop_times — identical to every prior phase.
+2. Started `uvicorn main:app` (real process, port 8000) against Docker PostGIS;
+   lifespan routing-graph build succeeded; `GET /health` 200.
+3. **Mounting confirmed two independent ways**: (a) `/api/admin/trips/generate`
+   is present in the assembled `main.app`'s OpenAPI schema (200/404/422) —
+   no test-only router setup involved; (b) it was reachable over real HTTP.
+4. **Authorization over real HTTP**:
+   - No auth header → `401 Could not validate credentials`.
+   - A freshly registered passenger user (via `POST /api/auth/register`) →
+     `403 You do not have permission to perform this action` (non-admin is
+     rejected, not just unauthenticated).
+   - After promoting that user to `role='admin'` directly in Postgres (the
+     project's established admin-provisioning path; `get_current_active_user`
+     re-reads the role from the DB every request) → `200 OK`.
+5. **FR-04 generation** (`service_date=2026-09-15`):
+   `{"trips_created": 97, "trips_replaced": 0, "stop_times_created": 2425}` —
+   the plan's own acceptance numbers. Confirmed in the DB independently:
+   `SELECT count(*) FROM trips WHERE route_id=... AND
+   scheduled_start_time::date='2026-09-15'` → **97**, and **2425** stop_times.
+   Generated StopTime offsets match `docs/transit_data.json`'s canonical FR-04
+   pattern **exactly** (arrivals `0,124,252,...,3335`; departures arrival+20s
+   dwell, terminus 3335/3335), and the first trip starts `06:00:00` PKT with
+   10-min headway (06:00/06:10/06:20). All generated trips are
+   `status='scheduled'`, `vehicle_id NULL`.
+6. **Idempotency**: calling the same request again returned
+   `{"trips_created": 97, "trips_replaced": 97, "stop_times_created": 2425}`;
+   the DB still holds exactly 97 trips / 2425 stop_times for that service date
+   (no duplication), and no duplicate `(trip_id, sequence)` StopTime rows
+   exist. A different service date (`2026-09-16`) generates a fresh 97/2425
+   alongside, without colliding with the 09-15 set.
+7. **No-canonical-pattern route (Red Line)**: `404` with the clear message
+   "Route 'Red' (agency 'Punjab Mass Transit Authority (PMTA)') has no
+   canonical trip pattern in the dataset - real timetable data exists today
+   only for FR-01, FR-04, FR-07, and FR-14...". Confirmed in the DB: **zero**
+   Trip rows and **zero** StopTime rows were created for the Red Line.
+8. **Nonexistent route id** → `404`.
+9. Everything was torn down: uvicorn stopped, all 11 tables (transit + users/
+   fares/tickets) truncated back to the empty pytest baseline, and the full
+   suite re-run green afterwards (515 passed again).
+
+## Implementation review (trip_generator.py) — task-brief compliance
+
+- **Reuses the Phase 1 importer**: `generate_daily_trips` slices the dataset
+  and hands it to `seeding.importer.import_dataset` → `_import_trip_patterns`
+  (deterministic `trip_id_for`/`stop_time_id_for`, replace-in-place). No
+  Trip/StopTime creation is reimplemented.
+- **Canonical source**: defaults to `DEFAULT_TRANSIT_DATA_PATH` =
+  `docs/transit_data.json` via `seeding.transit_data_importer.load_transit_data`.
+- **Only canonical routes get trips**: the 4-researched-route check (FR-01/04/
+  07/14) is data-driven — `NoCanonicalTripPattern` is raised (→ HTTP 404) for
+  any route with no pattern; there is no headway/speed guess and no fallback
+  to `simulation.trip_builder.build_trip_for_route`. Red Line (which has real
+  stops but no researched timetable) received zero fabricated rows.
+- **Correct association**: generated trips carry the right `route_id`,
+  `scheduled_start_time` on the requested service date in PKT, ordered
+  `StopTime` rows in sequence with offsets copied verbatim from the canonical
+  pattern.
+
+## Note: stale module docstring (not fixed, by design)
+
+`api/admin/router.py`'s module docstring still says "NOT registered on the
+main application" (lines 6–15), which has been false since the routers were
+integrated — the aggregator `api/router.py` mounts `admin_router` gated by
+`require_role(ROLE_ADMIN)`. This predates Phase 5 (Claude flagged it, left it
+for the same reason), it does not affect correctness, and the verification
+brief explicitly scoped out unrelated cleanup — so it is left as-is and noted
+here. A one-paragraph docstring fix is safe for any future agent to make.
+
+## What remains
+
+- **Phase 6** Frontend integration readiness: finalize response schemas
+  (including route geometry in journey legs), CORS, documented shapes across
+  every endpoint. Not started. **Phase 5 has no blockers — Phase 6 can begin.**
+
+---
+
 ### What Already Exists and Can Be Reused (Everything)
 
 

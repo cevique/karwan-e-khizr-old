@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -98,3 +100,36 @@ class GraphRebuildResponse(BaseModel):
     node_count: int
     ride_edge_count: int
     walk_edge_count: int
+
+
+class TripGenerationRequest(BaseModel):
+    """`POST /admin/trips/generate`'s request body (plan.md section M,
+    Phase 5). `route_id` is an EXISTING `Route` row's id (not a
+    `docs/transit_data.json` ref - the admin picks a route already in
+    the database, same as every other admin endpoint here)."""
+
+    route_id: uuid.UUID
+    service_date: date
+
+
+class TripGenerationResponse(BaseModel):
+    """Scoped-down `ImportReport` fields - only the ones relevant to
+    "how many trips/stop_times did this call produce for this one
+    route" (see `seeding.trip_generator.dataset_for_route`'s docstring
+    for why the response is scoped to one route rather than reusing
+    `ImportResponse` wholesale)."""
+
+    route_id: uuid.UUID
+    route_short_name: str
+    service_date: date
+    trips_created: int
+    trips_replaced: int
+    stop_times_created: int
+
+
+class TripGenerationRejectedResponse(BaseModel):
+    """Returned (with HTTP 404) when the route doesn't exist, or exists
+    but has no canonical trip pattern to generate from - see
+    `seeding.trip_generator.NoCanonicalTripPattern`."""
+
+    detail: str

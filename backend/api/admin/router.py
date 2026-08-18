@@ -1,6 +1,7 @@
 """
 Development/admin API router: seed demo data, reset seed data, import
-external data, and trigger a routing-graph rebuild.
+external data, trigger a routing-graph rebuild, and generate a real
+route's daily trips from its canonical timetable pattern (Phase 5).
 
 NOT registered on the main application. `api/router.py` (the top-level
 aggregator every other feature router is included into) is explicitly
@@ -20,6 +21,7 @@ mount this router on a publicly reachable path without adding some.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.schemas import (
@@ -30,14 +32,19 @@ from api.admin.schemas import (
     SeedRequest,
     SeedResetResponse,
     SeedResponse,
+    TripGenerationRejectedResponse,
+    TripGenerationRequest,
+    TripGenerationResponse,
     ValidationIssueSchema,
 )
 from api.graph_state import build_and_store_graph
+from db.models import Agency, Route
 from db.session import get_session
 from seeding.admin_convert import to_import_dataset
 from seeding.importer import ImportPersistenceError, ImportValidationError, import_dataset
 from seeding.parsers import ImportParseError, parse_csv_dataset
 from seeding.seed import clear_seed_data, seed_database
+from seeding.trip_generator import NoCanonicalTripPattern, generate_daily_trips
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -176,4 +183,65 @@ async def rebuild_graph(request: Request) -> GraphRebuildResponse:
         node_count=len(graph.nodes),
         ride_edge_count=len(graph.ride_edges),
         walk_edge_count=len(graph.walk_edges),
+    )
+
+
+@router.post(
+    "/trips/generate",
+    response_model=TripGenerationResponse,
+    responses={404: {"model": TripGenerationRejectedResponse}},
+)
+async def generate_trips(
+    payload: TripGenerationRequest,
+    session: AsyncSession = Depends(get_session),
+) -> TripGenerationResponse:
+    """Generate (or idempotently regenerate) one route's full day of REAL
+    `Trip`/`StopTime` rows for `payload.service_date`, from its canonical
+    timetable pattern in `docs/transit_data.json` (plan.md section M,
+    Phase 5) - the same real, officially-sourced per-route timetable data
+    `scripts/import_transit_data.py` already imports for every route at
+    once (Phase 1). See `seeding.trip_generator` for exactly what
+    "canonical pattern" means and why this never falls back to a
+    fabricated/simulated schedule for a route that doesn't have one.
+
+    `404` if `payload.route_id` doesn't exist, or exists but has no
+    canonical trip pattern - every route today except FR-01, FR-04,
+    FR-07, and FR-14 (see `seeding.trip_generator.NoCanonicalTripPattern`).
+    `422` if `import_dataset` itself rejects the (already-validated-once,
+    at original import time) canonical data - not expected in practice,
+    but not swallowed either.
+    """
+    route = (
+        await session.execute(select(Route).where(Route.id == payload.route_id))
+    ).scalar_one_or_none()
+    if route is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Route {payload.route_id} does not exist",
+        )
+
+    # Fetched explicitly (rather than via `route.agency`, a lazy
+    # relationship this async session won't implicitly resolve) - see
+    # `seeding.trip_generator.find_import_route`'s docstring for why the
+    # name (not the whole `Agency` row) is all that's actually needed.
+    agency_name = (
+        await session.execute(select(Agency.name).where(Agency.id == route.agency_id))
+    ).scalar_one()
+
+    try:
+        report = await generate_daily_trips(session, route, agency_name, payload.service_date)
+    except NoCanonicalTripPattern as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ImportValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    return TripGenerationResponse(
+        route_id=route.id,
+        route_short_name=route.short_name,
+        service_date=payload.service_date,
+        trips_created=report.trips_created,
+        trips_replaced=report.trips_replaced,
+        stop_times_created=report.stop_times_created,
     )
