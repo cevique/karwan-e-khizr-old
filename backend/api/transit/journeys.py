@@ -20,7 +20,13 @@ color, agency name, ...) was never part of the graph's minimal
 `RideEdge`/`GraphNode` structures (nor should it be), so it isn't
 available from `graph` alone. This is response-*building* after the
 search, not part of the search itself - the search (`find_shortest_path`)
-still only ever reads `graph`.
+still only ever reads `graph`. That same batch query also pulls each
+route's road-following geometry (Phase 6, plan.md section H item 6),
+reusing `api.transit.router`'s `_route_geometry_json_expr`/
+`_route_geometry_read` - the exact same `ST_AsGeoJSON` extraction and
+null-handling `GET /transit/routes/{id}` already uses - rather than a
+second, possibly-drifting implementation of "how do we turn `Route.path`
+into JSON" for this one caller.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ from api.transit.journey_schemas import (
     RideLegRead,
     WalkLegRead,
 )
+from api.transit.router import _route_geometry_json_expr, _route_geometry_read
 from api.transit.schemas import AgencyRead, Coordinates, RouteListItem, StopRead
 from db.models import Route
 from db.session import get_session
@@ -83,18 +90,23 @@ def _stop_read_from_graph(graph: TransitGraph, stop_id: uuid.UUID) -> StopRead:
 
 async def _fetch_routes_by_id(
     session: AsyncSession, route_ids: set[uuid.UUID]
-) -> dict[uuid.UUID, Route]:
-    """Batch-fetch every `Route` (with its `Agency` eagerly loaded) behind
-    `route_ids` in a single query - not one query per `RideLeg`, avoiding
-    an N+1 even when a journey has several transfers."""
+) -> dict[uuid.UUID, tuple[Route, str | None]]:
+    """Batch-fetch every `Route` (with its `Agency` eagerly loaded) AND
+    its road-following geometry GeoJSON (Phase 6) behind `route_ids` in a
+    single query - not one query per `RideLeg`, avoiding an N+1 even when
+    a journey has several transfers. Returns `{route_id: (route,
+    geometry_json)}`; `geometry_json` is `None` exactly when that
+    route's `path` hasn't been generated yet, same as
+    `GET /transit/routes/{id}`.
+    """
     if not route_ids:
         return {}
     result = await session.execute(
-        select(Route)
+        select(Route, _route_geometry_json_expr())
         .where(Route.id.in_(route_ids))
         .options(selectinload(Route.agency))
     )
-    return {route.id: route for route in result.scalars().all()}
+    return {route.id: (route, geometry_json) for route, geometry_json in result.all()}
 
 
 def _walk_leg_to_schema(
@@ -124,9 +136,9 @@ def _walk_leg_to_schema(
 
 
 def _ride_leg_to_schema(
-    leg: RideLeg, graph: TransitGraph, routes_by_id: dict[uuid.UUID, Route]
+    leg: RideLeg, graph: TransitGraph, routes_by_id: dict[uuid.UUID, tuple[Route, str | None]]
 ) -> RideLegRead:
-    route = routes_by_id[leg.route_id]
+    route, geometry_json = routes_by_id[leg.route_id]
     return RideLegRead(
         route=RouteListItem.model_validate(route),
         agency=AgencyRead.model_validate(route.agency),
@@ -136,6 +148,7 @@ def _ride_leg_to_schema(
             _stop_read_from_graph(graph, stop_id) for stop_id in leg.intermediate_stop_ids
         ],
         duration_s=leg.duration_s,
+        route_geometry=_route_geometry_read(route, geometry_json),
     )
 
 

@@ -3,9 +3,9 @@ API schemas for the journey-search endpoint (`POST /transit/journeys/search`).
 
 Deliberately separate from `api/transit/schemas.py` (which stays focused
 on the static Agency/Route/Stop API) - this module imports and reuses
-`Coordinates`/`StopRead`/`RouteListItem`/`AgencyRead` from there rather
-than duplicating equivalent structures, per this step's explicit
-instruction.
+`Coordinates`/`StopRead`/`RouteListItem`/`AgencyRead`/`RouteGeometryRead`
+from there rather than duplicating equivalent structures, per this step's
+explicit instruction.
 
 Like the rest of the API layer, everything here is a plain Pydantic
 `BaseModel` - never a `routing.journey`/`routing.graph` dataclass or a
@@ -20,7 +20,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from api.transit.schemas import AgencyRead, Coordinates, RouteListItem, StopRead
+from api.transit.schemas import AgencyRead, Coordinates, RouteGeometryRead, RouteListItem, StopRead
 
 # The routing objective to optimize for - kept as a plain Literal (not an
 # enum) so an invalid value naturally produces a 422 from Pydantic without
@@ -90,7 +90,22 @@ class WalkLegRead(BaseModel):
 class RideLegRead(BaseModel):
     """One uninterrupted ride on a single Route, with enough information
     for a client to render it: which route/agency, where to board and
-    alight, and every stop passed through in between, in order."""
+    alight, and every stop passed through in between, in order.
+
+    `route_geometry` (Phase 6, plan.md section H item 6) is the SAME
+    shape `GET /transit/routes/{id}/geometry` returns for this leg's
+    `route` - the route's FULL road-following polyline, not a sub-path
+    cropped to just the boarded-to-alighted segment. Per
+    `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` section B's own
+    recommendation: the frontend already has `board_stop`/`alight_stop`/
+    `intermediate_stops` in sequence order, so it can slice the polyline
+    to the ridden segment itself if it wants to - cheaper and simpler on
+    both sides than the backend computing and returning a sub-polyline.
+    Null (`{type: null, coordinates: null, ...}`) exactly when the
+    underlying `Route.path` hasn't been generated yet - the overwhelming
+    majority of routes today (see the Phase 3 handoff) - never a
+    fabricated or straight-line-substituted geometry.
+    """
 
     type: Literal["ride"] = "ride"
     route: RouteListItem
@@ -99,6 +114,7 @@ class RideLegRead(BaseModel):
     alight_stop: StopRead
     intermediate_stops: list[StopRead]
     duration_s: float
+    route_geometry: RouteGeometryRead
 
 
 JourneyLegRead = Annotated[WalkLegRead | RideLegRead, Field(discriminator="type")]

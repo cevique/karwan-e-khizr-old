@@ -1263,6 +1263,475 @@ here. A one-paragraph docstring fix is safe for any future agent to make.
 
 ---
 
+# SESSION HANDOFF — Phase 6 COMPLETE (2026-08-18, agent handoff)
+
+## Status: Phase 6 (Frontend Integration Readiness) is implemented and passing
+## in a sandbox with a real (non-Docker) PostgreSQL/PostGIS AND a real
+## `uvicorn` process reached over real HTTP. **Not yet verified against the
+## actual Docker Postgres/PostGIS environment** OpenCode used for Phases 1-5 -
+## same category of gap every authoring session in this file has flagged.
+## **This agent did NOT commit anything** - working tree changes only, per the
+## verification brief; OpenCode commits after its own independent check.
+
+**Test baseline this session: 532 passed, 0 failed, 0 skipped** (515 Phase-5-
+verified baseline + 17 new Phase 6 tests), run three times consecutively for
+stability (identical every time). DB confirmed empty (0 rows) after every run.
+
+## What Is Done (Phase 6)
+
+**Database changes: none** (plan.md section M says Phase 6 needs none -
+confirmed: `alembic upgrade head` was already a no-op at `d4e5f6a7b8c9` before
+any Phase 6 work, and still is after it).
+
+### What Phase 6 actually needed to add (most of section H was already done)
+
+Before writing any code, I read `plan.md` section H (the Map/Frontend
+Contract) item by item against the CURRENT implementation, per the task's
+instruction to "identify exactly which Phase 6 requirements are already
+partially supported." Result: **6 of section H's 7 items were already fully
+implemented** by Phases 1-5 (agencies/routes/route-detail/geometry/stops list
+with nearby-search - Phase 3; realtime vehicles/ETA - Phase 4). The two
+genuine gaps were:
+
+1. **Ride legs had no `route_geometry` field** (section H item 6) - the one
+   change plan.md's Phase 6 file list explicitly names.
+2. **No CORS middleware existed AT ALL** in `main.py` - not partially done,
+   not misconfigured, simply absent. Since Phase 6's own test spec says
+   "verify CORS headers," and there was nothing to verify, this was an
+   unavoidable Phase 6 addition even though `main.py` isn't in the phase's
+   literal "files to create/modify" list - flagged as a judgment call below
+   (task instruction 6: inspect prior phases/docs before deciding on a
+   genuine ambiguity).
+
+Everything else this phase touched is either these two additions or tests/
+docs describing them - no other backend behavior changed.
+
+### Modified files
+- **`api/transit/journey_schemas.py`** - `RideLegRead` gained
+  `route_geometry: RouteGeometryRead` (imported from `api/transit/schemas.py`,
+  not duplicated - same type `GET /transit/routes/{id}/geometry` already
+  returns). Docstring explains it's the route's FULL polyline, not a
+  sub-path cropped to the ridden segment - matching
+  `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` section B's own pre-existing
+  recommendation ("the frontend can slice that route's own polyline...
+  rather than the backend needing to compute and return a sub-polyline
+  itself"), which I read before implementing per instruction 6.
+- **`api/transit/journeys.py`** - `_fetch_routes_by_id` now ALSO selects each
+  route's geometry GeoJSON in the same batched query (still exactly one query,
+  no N+1), reusing `api.transit.router._route_geometry_json_expr`/
+  `_route_geometry_read` (imported across modules rather than duplicating the
+  `ST_AsGeoJSON`-extraction-and-null-handling logic a second time - reuse
+  requirement 4). `_ride_leg_to_schema` populates the new field. No other
+  function in this file changed.
+- **`main.py`** - added `CORSMiddleware`. `allow_origins=["*"]`,
+  `allow_credentials=False` (deliberately paired - Starlette's
+  `CORSMiddleware` refuses `allow_credentials=True` with a wildcard origin
+  outright, and nothing in this API relies on cookie-based CORS anyway: the
+  only credentialed flows use an `Authorization: Bearer <token>` header, per
+  `api/auth/router.py`, which `allow_headers=["*"]` already lets through
+  regardless of `allow_credentials`). Justified in a code comment: every
+  endpoint a browser map client needs (static transit network, journey
+  search, realtime positions/ETAs) is already public with no auth - only
+  `/admin/*` is gated, and that's not a browser-map frontend's concern.
+  Module docstring's one-line summary updated ("...the routing graph's
+  startup lifecycle" -> "...CORS, and the routing graph's startup
+  lifecycle").
+- **`docs/MAP_AND_REALTIME_RECOMMENDATIONS.md`** - the pre-existing
+  "Journeys" bullet (section B) updated from a forward-looking recommendation
+  to **IMPLEMENTED as of Phase 6**, describing exactly what `route_geometry`
+  is and isn't (full route polyline, not a sub-path; null, not fabricated,
+  when the route has no geometry yet). This is the one documentation change
+  Phase 6 actually made - per instruction, no other doc was touched, since
+  nothing else Phase 6 did changed a previously-documented implementation
+  status.
+
+### New file
+- **`tests/test_frontend_contract.py`** - 17 tests, in five groups:
+  1. **Response-shape validation** (section H items 1/3/5) for
+     `/transit/agencies`, `/transit/routes`, `/transit/routes/{id}`
+     (both WITH and WITHOUT geometry - two separate seeded routes, so both
+     the populated and the honest-null cases are exercised),
+     `/transit/routes/{id}/geometry`, `/transit/stops` (plain and
+     nearby-search-with-`distance_m`), `/transit/realtime/vehicles` (list AND
+     single-vehicle detail AND per-route), and
+     `/transit/realtime/vehicles/{id}/eta` - each asserts the documented key
+     set is a SUBSET of the actual response (never exact/exhaustive
+     equality), so this test suite doesn't accidentally forbid a future
+     phase from adding more fields.
+  2. **`route_geometry` on ride legs** (section H item 6, the Phase 6
+     API change) - one test with a route that has geometry (asserts
+     `type: "LineString"`, correct GeoJSON `[lon, lat]` order, correct
+     vertex count - the FULL route's geometry, not a crop), one test with a
+     route that doesn't (asserts explicit `null`, not a missing key).
+  3. **CORS** - one test for headers on a simple `GET`, one for a full
+     `OPTIONS` preflight (`Access-Control-Request-Method`/`-Headers`),
+     both asserting `access-control-allow-origin: *` is actually present.
+  4. **No-authentication-required** - every endpoint section H documents
+     as public is called with NO `Authorization` header anywhere in this
+     file, asserting none of them ever returns 401/403.
+  5. **Regression guard** - `/admin/trips/generate` still returns 401
+     with no auth header, specifically to catch Phase 6 accidentally
+     loosening the public/admin boundary while making other things public.
+
+  Fixture pattern mirrors `test_journey_api.py`/`test_enhanced_realtime.py`
+  exactly (real `main.app`, rolled-back SAVEPOINT `db_session`,
+  `get_session`/`get_transit_graph`/`get_vehicle_location_provider` all
+  overridden to the same session) - no new test infrastructure invented.
+
+## A real bug I hit and fixed - in my OWN test, not in production code
+
+Building `routing.graph.TransitGraph` twice against the same `AsyncSession`
+after mutating relationships in between (one test needed a second route's
+`RouteStop`s added mid-test, then a graph rebuild to pick them up) hit a
+genuine SQLAlchemy identity-map staleness issue: the second `build_graph`
+call's `selectinload(Route.route_stops)` silently returned the FIRST call's
+cached (empty) collection instead of re-querying, because the ORM object
+was already in the session's identity map with that relationship marked
+loaded. Fixed with a precisely-scoped `session.expire(route, ["route_stops"])`
+right before the second build (NOT `expire_all()` - tried that first, it
+broke a DIFFERENT already-loaded relationship, `route.agency`, by forcing a
+lazy-load attempt outside an async greenlet context, i.e.
+`MissingGreenlet`). This is purely a test-authoring artifact of rebuilding
+the graph twice mid-test - a real request builds the graph at most once per
+session, so **no production code (`routing.graph.build_graph` or anything
+else) needed a change for this**, and none was made.
+
+## Design decisions worth flagging for the next agent
+
+1. **CORS in `main.py` is a scope judgment call, not a literal
+   file-list match** - see "What Phase 6 actually needed to add" above.
+   I inspected `api/router.py`'s existing auth gating before deciding
+   `allow_credentials=False` + `allow_origins=["*"]` was safe (no
+   cookie-based flow exists anywhere in this codebase to leak cross-origin
+   credentials for) rather than guessing.
+2. **ETA field names were NOT renamed to match section H's literal
+   pseudo-JSON** (`scheduled`/`estimated`/`delay` there vs. the ALREADY-
+   SHIPPED, ALREADY-VERIFIED `scheduled_arrival`/`estimated_arrival`/
+   `delay_seconds` in `ETARead`, Phase 4). Per instruction 6 (inspect prior
+   phases before a judgment call): Phase 4's field names were built,
+   tested, AND live-verified against Docker+HTTP by OpenCode - section H's
+   shorthand reads as documentation-level abbreviation (the same pattern as
+   Phase 1's stale "97 stops" placeholder I found in Phase 5, and Phase 5's
+   own literal "97" trip count I confirmed was real, not stale) rather than
+   a literal contract OpenCode's verification depended on. Renaming
+   would violate instruction 5 ("do not weaken/delete/skip existing
+   tests") by breaking `tests/test_enhanced_realtime.py`'s and
+   `tests/test_realtime_api.py`'s existing assertions for no benefit.
+   `tests/test_frontend_contract.py` asserts the REAL (already-verified)
+   field names.
+3. **Realtime/static schemas were NOT otherwise modified** -
+   `api/transit/schemas.py` and `api/transit/realtime/schemas.py` are both
+   on Phase 6's file list ("finalize... schemas"), but line-by-line
+   comparison against section H found every field already present and
+   correctly typed (Phases 3/4). "Finalize" was read as "confirm and
+   contract-test," not "must contain a diff" - consistent with instruction
+   2 (do not redesign existing architecture unless explicitly required)
+   and instruction 5.
+4. **No walk-leg geometry field was added.** Section H's example JSON shows
+   `route_geometry` only on the `ride` leg shape, not the `walk` one; the
+   pre-existing `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` recommendation
+   for walk legs was "a walk leg's own straight-line... path," which
+   `WalkLegRead`'s existing `from_location`/`to_location`/`distance_m` pair
+   already lets a client draw directly - adding a redundant GeoJSON
+   LineString for two points would be scope creep past what section H
+   actually specifies.
+
+## What was verified, and how
+
+- **Full suite, three times consecutively**: 532 passed, 0 failed, 0 skipped
+  every time (~75s each). DB confirmed empty after each run.
+- **`alembic upgrade head`**: no-op, still exactly one head (`d4e5f6a7b8c9`) -
+  confirms Phase 6 genuinely added no migration.
+- **App wiring smoke check**: imported `main.app` and generated its OpenAPI
+  schema directly (no server needed) - all 41 paths present, including the
+  already-existing `/api/transit/journeys/search`; confirms the
+  `journey_schemas.py`/`journeys.py` changes don't break app assembly.
+- **Live HTTP spot-check against a real `uvicorn` process** (not Docker -
+  this sandbox has none - but a genuinely separate OS process bound to a
+  real socket, reached via `curl`, not `pytest`'s `ASGITransport`):
+  1. `GET /` -> 200, confirms the app boots with the new CORS middleware
+     installed (a misconfigured middleware argument would have raised at
+     construction time, before any request).
+  2. `OPTIONS /api/transit/journeys/search` with
+     `Access-Control-Request-Method: POST` -> real `200` with
+     `access-control-allow-origin: *`,
+     `access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT`,
+     `access-control-allow-headers: content-type` - a genuine CORS
+     preflight response, not a test-only shortcut.
+  3. `GET /api/transit/agencies` with an `Origin` header -> real `200` with
+     `access-control-allow-origin: *` on a simple (non-preflighted) request
+     too.
+  4. Imported the real canonical dataset
+     (`scripts/import_transit_data.py --service-date 2026-09-01`): 2
+     agencies, 122 stops, 26 routes, 115 route_stops, 275 trips, 6242
+     stop_times - identical to every prior phase's verified baseline.
+  5. **Live journey search through real data, checking `route_geometry`
+     specifically**: queried the DB directly for a real, currently-located
+     consecutive stop pair (Red Line: Saddar -> Marrir Chowk -> Liaquat
+     Bagh - all three have real coordinates), then called
+     `POST /api/transit/journeys/search` with those exact coordinates as
+     origin/destination over real HTTP. Got a real `200` with a one-ride
+     journey on the real "Red" route/"Punjab Mass Transit Authority (PMTA)"
+     agency, `board_stop`/`alight_stop`/`intermediate_stops` all correct,
+     and **`route_geometry: {"type": null, "coordinates": null,
+     "geometry_source": null, "geometry_confidence": null}`** - confirming
+     live, against real data, that the new field appears and is honestly
+     null (Red Line has no generated geometry - consistent with every
+     prior phase's "0 real routes have geometry" finding) rather than
+     fabricated or omitted.
+  6. Everything was torn down: uvicorn stopped, all transit tables
+     truncated back to the empty pytest baseline (confirmed via direct
+     query: 0 stops, 0 trips), and the full suite re-run green afterward
+     (532 passed again).
+
+## What could NOT be verified in this environment (for OpenCode)
+
+- **The real Docker Postgres/PostGIS environment specifically.** Same
+  category of gap every prior authoring session in this file has had. No
+  specific reason to expect a difference (no schema change at all this
+  phase - the only risk surface is the CORS middleware config and the
+  `route_geometry` query join, both plain SQLAlchemy/Starlette behavior with
+  no PostGIS-version sensitivity), but genuinely unverified against that
+  specific environment.
+- **A real browser's CORS enforcement.** `curl`/`httpx` don't enforce CORS
+  themselves (only browsers do, client-side) - what was verified is that the
+  SERVER sends the correct headers for a browser to act on; an actual
+  cross-origin `fetch()` from a real web page was not exercised (no browser
+  available in this sandbox).
+- **Windows-specific behavior.**
+
+## What OpenCode should run to verify
+
+```
+# From an environment with Docker + a reachable Postgres/PostGIS:
+alembic upgrade head          # expect: no-op, still d4e5f6a7b8c9 (no new
+                               # migration this phase)
+pytest -q                     # expect: 532 passed, 0 failed, 0 skipped
+pytest tests/test_frontend_contract.py -q   # expect: 17 passed, the
+                               # Phase-6-specific subset in isolation
+```
+
+Live HTTP spot-check (mirrors what this session already did):
+
+```
+python scripts/import_transit_data.py --service-date <any date>
+uvicorn main:app   # separate terminal/process
+curl -i -X OPTIONS http://localhost:8000/api/transit/journeys/search \
+     -H "Origin: https://example.test" -H "Access-Control-Request-Method: POST"
+# expect: 200, access-control-allow-origin: *
+
+# Find a real located consecutive stop pair (e.g. via psql: join routes/
+# route_stops/stops where stops.location IS NOT NULL, ordered by sequence),
+# then:
+curl -X POST http://localhost:8000/api/transit/journeys/search \
+     -H "Content-Type: application/json" \
+     -d '{"origin": {...}, "destination": {...}, "objective": "fastest", "max_walk_m": 500}'
+# expect: 200, a "ride" leg containing "route_geometry": {"type": null, "coordinates": null, ...}
+#  (or a real LineString, IF this environment has by then run Phase 3's
+#  geocoding/geometry scripts far enough to locate a full route's stops -
+#  not the case in any environment so far)
+```
+
+As always: clean transit tables (`stop_times, trips, route_stops, routes,
+stops, agencies` - TRUNCATE CASCADE, in that order) before running `pytest`
+again if the live check leaves committed data behind.
+
+## What must NOT be changed by the verification agent
+
+- **`tests/test_realtime_api.py`, `tests/test_enhanced_realtime.py`'s ETA
+  field-name assertions** (`scheduled_arrival`/`estimated_arrival`/
+  `delay_seconds`) - see design decision #2 above. Renaming these to match
+  section H's shorthand would be a real, breaking API change to an
+  already-shipped, already-Docker-verified contract, not a fix.
+- **`api/admin/router.py`'s stale "NOT registered on the main application"
+  docstring** - predates Phase 5, not touched by Phase 6 either, still not
+  this task's concern (see the Phase 5 VERIFIED handoff's note on this).
+- **The dangling leftover sentence fragment** immediately after the
+  "Routes" bullet in `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` section B
+  ("(§A.2), it should be exposed as a GeoJSON `LineString`...") - this
+  predates Phase 6 (an artifact of an earlier phase's doc edit), is
+  unrelated to anything Phase 6 changed, and fixing unrelated pre-existing
+  issues is out of scope per this task's own instructions.
+
+## What Remains
+
+Per plan.md section M, Phase 6 was the last phase explicitly specified in
+this document. No Phase 7 is defined here - any further work is a new scope
+to be specified separately, not something to infer or start unprompted.
+
+## Active Todo List (for next agent)
+- [x] Phase 1 import pipeline + migrations + tests (431 passed)
+- [x] Phase 2 geocoding service + script + provenance + tests + live run
+      (447 passed, 88/122 stops located)
+- [x] Phase 3 OSRM route geometry service + script + provenance columns + API
+      exposure + tests + live-verified against real Docker PostGIS + OSRM
+      (464 passed, 0 real routes eligible - correct, honest outcome)
+- [x] Phase 4 enhanced realtime API (bearing/speed/route+stop names/ETA/delay)
+      + optional Route.path polyline interpolation + tests, live-verified
+      against real Docker PostGIS + real uvicorn by OpenCode (500 passed)
+- [x] Phase 5 admin daily-trip generation endpoint + tests, live-verified
+      against real Docker PostGIS + real uvicorn + real admin auth by
+      OpenCode (515 passed; FR-04 -> 97 trips confirmed live)
+- [x] Phase 6 frontend integration readiness: `route_geometry` on journey
+      ride legs + CORS middleware (previously entirely absent) + frontend
+      contract test suite, live-verified in this sandbox (non-Docker
+      Postgres + real uvicorn + real HTTP, including a real journey search
+      against real imported data showing the new field honestly null)
+      (532 passed; NOT yet verified against Docker)
+- [x] Phase 6 follow-up: verified the same 532 tests (specifically the 17 new
+      ones) against the real Docker Postgres/PostGIS environment, plus the
+      live HTTP/CORS spot-checks reproduced there (see the "Phase 6 VERIFIED"
+      section below)
+- [x] Remember: clean transit tables before pytest after running any
+      import/enrichment script or live spot-check that commits
+
+---
+
+# SESSION HANDOFF — Phase 6 VERIFIED (2026-08-19, verification agent / OpenCode)
+
+## Status: Phase 6 (Frontend Integration Readiness) verified against a live
+## Docker PostgreSQL/PostGIS + a real uvicorn process. **532 tests pass, 0
+## failures, 0 skips** — identical to the authoring session's reported result,
+## now confirmed against the same Docker environment OpenCode used for
+## Phases 1–5. This is the FINAL phase in plan.md section M; no Phase 7
+## exists and none was started.
+
+## Environment used for this verification
+
+- Windows 10 + Docker Desktop; `postgis/postgis:16-3.4` container started via
+  the repository's existing `backend/docker-compose.yml` (no new/foreign DB
+  setup, no direct PostgreSQL install on Windows). Python 3.13.3,
+  `backend/.venv`, commands run from PowerShell.
+- DB was at the empty pytest baseline (all tables 0 rows, alembic at
+  `d4e5f6a7b8c9`) when verification started.
+
+## Test results
+
+- **Full suite** (`pytest -q`): **532 passed, 0 failed, 0 skipped** (~3.5 min),
+  run twice — once at the start and once after the live spot-check data was
+  cleaned up — both identical. No test was weakened, deleted, or skipped.
+- **Phase 6 subset** (`pytest tests/test_frontend_contract.py -q`):
+  **17 passed** (all executed against the real Docker PostGIS — none skipped).
+- **Phase 4 regression subset** (`pytest tests/test_engine_geometry_interpolation.py
+  tests/test_enhanced_realtime.py tests/test_simulation_engine.py -q`):
+  **59 passed**.
+- **Phase 5 regression subset** (`pytest tests/test_trip_generation.py -q`):
+  **15 passed**.
+- **ETA/realtime subset** (`pytest tests/test_realtime_api.py
+  tests/test_enhanced_realtime.py -q`): **27 passed** — the established
+  `scheduled_arrival`/`estimated_arrival`/`delay_seconds` field names are
+  untouched.
+
+## Migration status
+
+- `alembic upgrade head` is clean/idempotent: a no-op on this DB (already at
+  `d4e5f6a7b8c9`).
+- Exactly **one** Alembic head: `d4e5f6a7b8c9` (Phase 3's route-geometry
+  provenance migration). Linear chain, no new migration for Phase 6 (correct —
+  plan.md section M says Phase 6 needs none). No migration files were added.
+
+## Live HTTP spot-check (real uvicorn, real sockets, Docker PostGIS)
+
+1. Imported the real canonical dataset (`scripts/import_transit_data.py
+   --service-date 2026-09-01`): 2 agencies, 122 stops, 26 routes, 115
+   route_stops, 275 trips, 6242 stop_times — identical to every prior phase.
+   Confirmed directly in PostGIS: **0 of 26 routes have geometry** (all
+   `path`/`geometry_source` NULL) and 17 of 122 stops have coordinates — the
+   "no real route has geometry" precondition the authoring handoff relies on
+   still holds.
+2. Started `uvicorn main:app` (real process, port 8000) against Docker PostGIS;
+   lifespan routing-graph build succeeded; `GET /health` 200.
+3. **Journey search — honest NULL geometry over real HTTP**: called
+   `POST /api/transit/journeys/search` for the real Red Line's located
+   consecutive pair Saddar → Marrir Chowk. Got a real 200 with a one-ride
+   journey on route "Red", and the ride leg carries
+   `"route_geometry": {"type": null, "coordinates": null,
+   "geometry_source": null, "geometry_confidence": null}` — the field is
+   present and honestly null for a route with no generated geometry (matching
+   the authoring handoff's own live finding), never fabricated or omitted.
+4. **Journey search — populated GeoJSON + full-route semantics over real
+   HTTP**: built a throwaway two-stop route `P6-CHK` from two real located
+   stops (Ammar Chowk, Bank Road — the same pattern Phases 3/4 used for their
+   throwaway routes), assigned it a **synthetic** 3-vertex `Route.path`
+   LINESTRING directly in PostGIS (a test-path proof, not real transit
+   geometry; the route was deleted afterward), restarted uvicorn so the
+   startup graph rebuild picked the route up, and searched Ammar Chowk →
+   Bank Road. The ride leg returned `"type": "LineString"` with **all 3
+   vertices** of the route's full polyline (`[[73.051,33.635],[73.05,33.639],
+   [73.046,33.644]]`, GeoJSON `[lon, lat]` order), `geometry_source: "OSRM"`,
+   `geometry_confidence: "OSM-DERIVED"` — proving the FULL route polyline is
+   exposed, not a sub-path cropped to the boarded→alighted segment, and that
+   the `ST_AsGeoJSON` extraction wired through `api.transit.router`'s
+   `_route_geometry_json_expr`/`_route_geometry_read` (reused, not
+   duplicated) works end-to-end over real HTTP.
+5. **Realtime endpoints over real HTTP**: started a demo trip on `P6-CHK`
+   via `POST /api/transit/realtime/simulation/routes/{id}/demo-trip`;
+   `GET /api/transit/realtime/vehicles`, `GET /api/transit/realtime/vehicles
+   /{id}`, and `GET /api/transit/realtime/vehicles/{id}/eta` all returned 200
+   with `route_short_name`, `bearing`, `speed_kmh`, `current_stop_name`/
+   `next_stop_name`, `scheduled_arrival_next_stop ==
+   estimated_arrival_next_stop`, and `delay_seconds: 0.0` — the established
+   Phase 4 field names intact over real HTTP.
+6. **CORS over real HTTP**: (a) `GET /api/transit/agencies` with an `Origin`
+   header → 200 with `access-control-allow-origin: *` (simple request);
+   (b) `OPTIONS /api/transit/journeys/search` with
+   `Access-Control-Request-Method: POST` → 200 with
+   `access-control-allow-origin: *`, `access-control-allow-methods:
+   DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT`, and
+   `access-control-allow-headers: content-type`. No
+   `access-control-allow-credentials` header on either — the intended
+   `allow_origins=["*"]` + `allow_credentials=False` pairing, unchanged.
+7. **Authentication NOT weakened by CORS**: `POST /api/admin/trips/generate`
+   with no auth header → **401** `{"detail":"Could not validate credentials"}`
+   — with AND without an `Origin` header. CORS adds response headers only; it
+   does not bypass auth. Public transit endpoints stay 200 with no auth.
+8. Everything was torn down: uvicorn stopped, throwaway route/vehicle/trip
+   removed, all 11 tables (transit + users/fares/tickets) truncated back to
+   the empty pytest baseline (confirmed via direct query: 0 rows everywhere),
+   and the full suite re-run green afterwards (532 passed again).
+
+## Implementation review (Phase 6 diff) — task-brief compliance
+
+- **Diff scope is exactly what the handoff claims**: 4 modified files
+  (`api/transit/journey_schemas.py`, `api/transit/journeys.py`, `main.py`,
+  `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md`) + 1 new test file
+  (`tests/test_frontend_contract.py`) + the plan.md handoff. No other file
+  was touched — no test file was modified, no migration was added, no
+  dependency was introduced.
+- **`route_geometry` reuses Phase 3 logic**: `journeys.py` imports and reuses
+  `api.transit.router`'s `_route_geometry_json_expr`/`_route_geometry_read`
+  (the exact same `ST_AsGeoJSON` extraction and null-handling
+  `GET /transit/routes/{id}` uses) rather than duplicating a second
+  implementation. `RideLegRead.route_geometry` is the same
+  `RouteGeometryRead` type, not a new schema.
+- **No fabrication**: real routes still have NULL geometry (0/26, confirmed
+  directly in PostGIS); the API returns explicit `null` for them. The only
+  geometry present during verification was a synthetic test-path on a
+  throwaway route, deleted afterward. No canonical transit data, timetables,
+  or docs/transit_data.json were modified.
+- **ETA contract preserved**: no field was renamed; the section H shorthand
+  (`scheduled`/`estimated`/`delay`) was correctly read as documentation
+  abbreviation, not a contract change.
+- **CORS configuration as intended**: `allow_origins=["*"]`,
+  `allow_credentials=False` — verified over real HTTP, not changed.
+- **Auth boundary intact**: `/admin/*` still requires a role; an unauthenticated
+  request returns 401 with or without an `Origin` header.
+
+## What remains / NOT verified
+
+- **Browser-level CORS enforcement was NOT tested** — no browser was available;
+  what was verified is that the server sends the correct headers over real HTTP.
+  The authoring handoff already flags this as unverified; it remains so.
+- **No real route has geometry yet** (0/26, confirmed again) — so a "real route
+  with real OSRM geometry in a journey response" can only be demonstrated via a
+  synthetic path, as done above. Real geometry will appear only when Phase 2/3's
+  geocoding/geometry scripts are run far enough to locate a full route's stops.
+- Per plan.md section M, Phase 6 was the final phase; **no further implementation
+  work was started.** The repository is ready for a post-plan architecture/product
+  review.
+
+---
+
 ### What Already Exists and Can Be Reused (Everything)
 
 

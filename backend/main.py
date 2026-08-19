@@ -6,15 +6,14 @@ Run locally (from the `backend/` directory):
     uvicorn main:app --reload
 
 This module wires up the FastAPI application instance, the API router
-aggregator, and the routing graph's startup lifecycle (see
-`api.graph_state`). Authentication and all feature functionality beyond
-the static transit API and journey-search plumbing are deliberately out
-of scope for this step and will be added in later ones.
+aggregator, CORS, and the routing graph's startup lifecycle (see
+`api.graph_state`).
 """
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.graph_state import build_and_store_graph
 from api.health import router as health_router
@@ -39,6 +38,34 @@ app = FastAPI(
     description="Public-transit journey planning API for the Karwan-e-Khizr project.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# CORS (Phase 6, plan.md section M/H: "frontend developer can integrate
+# against stable, documented API contracts" - a browser-based map client
+# cannot call this API cross-origin at all without this).
+#
+# `allow_origins=["*"]` deliberately: every endpoint a browser map client
+# actually needs (the static transit network, journey search, realtime
+# vehicle positions/ETAs) is already publicly readable with no
+# authentication (see api/router.py - only `/admin/*` requires
+# `require_role(ROLE_ADMIN)`, and admin tooling is not a browser-map
+# frontend's concern). `allow_credentials=False` is paired with the
+# wildcard origin deliberately, not by oversight - the admin/auth flows
+# use an `Authorization: Bearer <token>` header (see api/auth/router.py),
+# not cookies, so no request in this API relies on
+# `credentials: include`/cookie-based CORS at all; Starlette's
+# `CORSMiddleware` also refuses `allow_credentials=True` combined with a
+# wildcard origin outright, so this pairing is the only valid one that
+# still lets any origin's Authorization header through
+# (`allow_headers=["*"]` covers that). Tightening `allow_origins` to a
+# specific known frontend domain is a deployment-time config change, not
+# a code change - nothing here hardcodes an environment-specific origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Health/readiness endpoints are mounted directly on the app, unprefixed, so

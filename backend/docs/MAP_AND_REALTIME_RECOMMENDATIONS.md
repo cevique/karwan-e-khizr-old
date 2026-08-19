@@ -156,12 +156,22 @@ endpoint — additive changes to the existing `api/transit/` routers are suffici
   exactly as recommended here. The frontend does not yet do anything differently based
   on the value (that's a frontend/Phase 6 decision, not a backend one), but the data is
   there to support it.
-- **Journeys**: a computed itinerary (existing `routing`/`api/transit/journeys.py`
-  subsystem) should expose, per leg: leg type (walk/ride), the specific route+stop
-  range for a ride leg (so the frontend can slice that route's own polyline to just
-  the ridden segment, rather than the backend needing to compute and return a
-  sub-polyline itself — cheaper and simpler on both sides), and a walk leg's own
-  straight-line or (if ever available) road-following path.
+- **Journeys**: **IMPLEMENTED as of Phase 6** — each ride leg of a computed itinerary
+  (`POST /transit/journeys/search`) now carries leg type (walk/ride), the specific
+  route+stop range (`board_stop`/`alight_stop`/`intermediate_stops`, in sequence
+  order), and a `route_geometry` field (`RideLegRead`, `api/transit/journey_schemas.py`)
+  — the SAME full-route `RouteGeometryRead` shape `GET /transit/routes/{id}/geometry`
+  returns, exactly as recommended here: the backend does not compute or return a
+  sub-polyline cropped to the ridden segment; the frontend already has the board/
+  alight/intermediate stops in order and can slice the full polyline itself if it
+  wants to. Null (`{type: null, coordinates: null, ...}`) whenever the underlying
+  route has no geometry generated yet — still every real route today, per Phase 3's
+  handoff — same honest non-fabrication as `GET /transit/routes/{id}` itself. A walk
+  leg's own straight-line path is unchanged from Phase 1/2 (§ this file's "Walking
+  segments" bullet below) — Phase 6 did not add a walk-leg geometry field, since one
+  wasn't part of the original recommendation here (only "distance/duration", which
+  `WalkLegRead` already had) and the map client already draws a straight line between
+  `from_location`/`to_location` itself.
 - **Walking segments**: the existing walking-connection logic
   (`routing.providers.StraightLineWalkingProvider`) computes straight-line walking
   distances/times only. For map display, a straight line between two stops is a
