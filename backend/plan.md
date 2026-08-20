@@ -1,2523 +1,879 @@
-# Karwan-e-Khizr Backend — Phase 2 Implementation Plan
+# Karwan-e-Khizr — Master Product & Implementation Blueprint
+### (Bano Qabil × Alibaba Cloud AI Hackathon — kickoff-ready revision)
 
-## Execution Order: Phases 1→2→3→4→5→6 (sequential)
+**Status of this document.** This fully replaces the previous
+`backend/plan.md`. It is written to be handed to Alibaba Qoder (and the
+team) at hackathon kickoff as the implementation blueprint. It
+incorporates senior architecture feedback received after the prior
+revision: (1) the voice layer must use a dedicated speech/NLP model, not
+the main LLM doing double duty as both transcriber and reasoner; (2)
+Qwen sits above that as a genuine conversational Journey Planner
+agent — understanding intent, preferences, constraints, doing
+clarification and tool selection — not a one-shot text→JSON converter;
+(3) routing intelligence should be evaluated as a proper **geospatial
+transit layer** (PostGIS/OSM/OSRM-based spatial reasoning), with
+Dijkstra correctly understood as one implementation detail inside a
+deterministic optimization stage, not the project's "AI story," and not
+something to rip out and replace with an unproven neural router either.
 
----
+**Preparation-period framing.** The current repository is a **verified
+reference foundation**, built before the hackathon as preparation — not
+a thing to keep extending indefinitely before kickoff. With
+approximately two days of prep remaining, this document does not add new
+pre-hackathon implementation phases; it re-ranks everything the
+hackathon build should focus on, sequenced for a compelling working demo
+built live during the event using Alibaba-provided resources and Qoder,
+with this repository and this document as the starting reference.
 
-# SESSION HANDOFF — Phase 1 COMPLETE (2026-08-17, agent handoff)
-
-## Status: Phase 1 (Transit Data Import) is COMPLETE, verified, and committed.
-
-**Test baseline: 431 passed (406 original + 25 new Phase 1 tests), 0 failures.**
-
-## What Is Done (Phase 1, all committed)
-
-### New files
-- `seeding/transit_data_importer.py` — dedicated converter from the canonical
-  `docs/transit_data.json` shape (uuid `id`s + human `key`s, `operators`,
-  `trips` with embedded `stop_times`, top-level `route_stops` that only cover
-  red_line) to the generic `ImportDataset`. Direction normalized
-  `Forward`/`Backward` → `forward`/`backward`. FR-14's null
-  `departure_offset_s` → `departure = arrival`. FR routes get RouteStop rows
-  DERIVED from `trips[].stop_times` (sequence = index+1, distance None) since
-  their only ordered stop sequence lives there; red_line stops come from the
-  top-level array (23 rows). Result: 2 agencies, 122 stops, 26 routes,
-  115 route_stops, 4 trip patterns.
-- `scripts/import_transit_data.py` — CLI: `--dataset` (default
-  `docs/transit_data.json`), `--service-date` (default today), `--dry-run`.
-  Uses `allow_routes_without_stops=True`.
-- `alembic/versions/a1b2c3d4e5f6_make_stops_location_nullable.py` — makes
-  `stops.location` nullable (plan.md section B: ~105 of 122 stops have null
-  coords in the canonical dataset).
-- `alembic/versions/b2c3d4e5f6a7_add_stops_ref.py` — adds nullable
-  `stops.ref` (see the data-integrity bug below).
-- `tests/test_transit_data_import.py` — 25 tests: converter mapping, trip
-  pattern generation, validation, full DB import (row counts), null vs
-  non-null coords, FR-01 offsets, idempotency, deterministic IDs,
-  service-date separation, graph skipping unlocated stops, simulator guards.
-
-### Modified files
-- `seeding/import_schema.py` — `ImportDataset` extended with `trip_patterns`
-  + `trip_stop_times` + `stop_times_for(route_ref, direction)` helper;
-  `ImportTripPattern`/`ImportStopTime` dataclasses; `ImportStop` lat/lon now
-  `float | None = None`.
-- `seeding/parsers.py` — optional generic JSON `trip_patterns` parsing
-  (additive; the generic parser still REQUIRES lat/lon for stops — only the
-  canonical converter builds null-coord stops directly).
-- `seeding/validation.py` — `validate_dataset(dataset, *,
-  allow_routes_without_stops=False)` downgrades `insufficient_stops` errors
-  to warnings; full trip-pattern validation (refs, direction, headway, count,
-  times, stop-time offsets, `trip_count_exceeds_last_trip_start` warning).
-- `seeding/importer.py` — `import_dataset(..., allow_routes_without_stops=
-  False, service_date=None)`; `generate_trip_starts` (exactly
-  `total_trips_per_day`, NOT capped by `last_trip_start`); deterministic
-  uuid5 trip/stop_time IDs; replace-semantics re-import; null-coord stops.
-- `db/models/stop.py` — `location` nullable + new `ref` column.
-- `routing/graph.py` — `_fetch_nodes` filters `Stop.location.is_not(None)`;
-  `_fetch_ride_edges` skips pairs whose stops aren't graph nodes.
-- `simulation/trip_builder.py` — `load_trip_schedule` returns None if any
-  stop lacks coords; `build_trip_for_route` raises ValueError.
-- `api/transit/schemas.py` / `api/transit/router.py` — `StopRead.location` is
-  `Coordinates | None`; `_stop_read` returns null location for unlocated
-  stops.
-- `tests/test_transit_models.py` — the one pre-existing test that asserted
-  `stops.c.location` NOT nullable was updated to assert nullable (with a
-  justification docstring).
-
-## Problems Found & Solved This Session
-
-1. **DATA-INTEGRITY BUG (major): stop name collision.** `docs/transit_data.json`
-   contains FOUR pairs of DISTINCT stops that share a display `name`:
-   `faizabad`(Red Line, has coords)/`cda_faizabad`(CDA feeder, null coords),
-   `bari_imam`/`cda_bari_imam`, `g9_markaz`/`cda_g_9_markaz`,
-   `g10_markaz`/`cda_g_10_markaz`. The importer's name-based get-or-create
-   collapsed each pair into ONE row (118 stops instead of 122), which would
-   corrupt the routing graph (both routes sharing a stop node) AND make
-   re-import crash with `MultipleResultsFound`. FIX: added nullable `stops.ref`
-   column holding the dataset's stable `key`; `_get_or_create_stop` now
-   matches by `ref` first, falling back to `name` only for ref-less
-   (legacy/admin) data. Now: 122 stops imported, idempotent re-import works
-   (275 replaced / 0 new on second run).
-2. **Timezone round-trip bug in deterministic trip IDs.** `trip_id_for` used
-   `start.isoformat()` on the PKT-aware insert value; Postgres stores
-   TIMESTAMPTZ and asyncpg returns UTC, so the read-back value produced a
-   DIFFERENT UUID than the one used at insert time (idempotency and
-   determinism broken). FIX: `trip_id_for` normalizes via
-   `start.astimezone(PKT)` before hashing. Tests assert on
-   `scheduled_start_time.astimezone(PKT)` wall-clock.
-3. **Wrong canonical offsets in my first test draft.** I hard-coded plan.md's
-   example offsets (130/150) but the real FR-01 dataset is 168/188 — fixed to
-   match the canonical data (plan.md's §E example is illustrative, not exact).
-4. **Operational gotcha (IMPORTANT for the next agent):** pytest runs against
-   the LIVE docker Postgres (rolled-back transactions) and assumes an EMPTY
-   baseline (e.g. `test_validate_endpoint_reports_errors_without_persisting`
-   expects `stops_total == 0`). If you run `scripts/import_transit_data.py`
-   (which COMMITS), you MUST delete rows from
-   `stop_times → trips → route_stops → routes → stops → agencies` (in that
-   order, or cascade) before running pytest, or ~10 tests fail.
-
-## Verified End-to-End
-`python scripts/import_transit_data.py --service-date 2026-08-16`:
-- agencies 2, stops 122, routes 26, route_stops 115, trips 275, stop_times 6242
-- second run: trips replaced=275, created=0 (idempotent), static 0 created
-- graph builds: 17 nodes (located stops only), 6 ride_edges, 2 walk_edges
-- DB was cleaned back to empty baseline after verification.
-
-## What Remains
-
-### Next move (Phase 2 — Geospatial Enrichment), see §C / §M-Phase 2
-1. `db/models/stop.py` — add `coordinate_source`, `coordinate_confidence`
-   columns; migration `xxxx_add_stop_coordinate_provenance.py`.
-2. `seeding/geocoding.py` — Nominatim geocoding service (httpx, already in
-   requirements). Bounding box 33.5–33.85N, 73.0–73.3E. Max 1 req/sec.
-   Only fill NULL coords; never overwrite APPROXIMATE seed coords.
-3. `scripts/geocode_stops.py` — CLI (network access required; ~105 stops).
-4. `tests/test_geocoding.py` (mocked Nominatim).
-5. Update `docs/DATA_GAPS.md`/`SOURCES.md` with enrichment results.
-
-### Later phases (see §M)
-- **Phase 3** Route geometry via OSRM → `Route.path` + `geometry_source`/
-  `geometry_confidence` columns; `GET /api/transit/routes/{id}/geometry`.
-- **Phase 4** Enhanced realtime API (bearing, stop names, ETA, delay);
-  `GET /api/transit/realtime/vehicles/{id}/eta`.
-- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint.
-- **Phase 6** Frontend contract finalization (route geometry in journey legs,
-  CORS, documented response shapes).
-
-### Known open items / thinking
-- `Stop` model still has NO uniqueness constraint on `ref` (deliberate: seed
-  rows predate it). If Phase 2 wants to enforce uniqueness, add a partial
-  unique index WHERE ref IS NOT NULL — but only if a bug demands it.
-- RouteStop `distance_along_route_m` still NULL everywhere (Phase 3 fills it).
-- `Route.path` still NULL everywhere (Phase 3 fills it).
-- Generic parser still requires stop lat/lon — by design (existing tests
-  depend on `test_parse_json_dataset_rejects_missing_required_field`).
-- The 21 routes with no stop sequence at all import fine via
-  `allow_routes_without_stops=True` (warning, not error). If we later get
-  stop sequences for them, just add to transit_data.json and re-import.
-- FR-01's documented 16th trip starts 22:15 but `last_trip_start` says 22:00.
-  We generate the documented 16 trips and surface the mismatch as a
-  validation warning (`trip_count_exceeds_last_trip_start`). Do NOT silently
-  drop the trip.
-
-## Active Todo List (for next agent)
-- [x] Phase 1 import pipeline (schema/parser/validation/importer) + scripts
-- [x] Phase 1 migration(s): stops.location nullable, stops.ref
-- [x] Phase 1 test file `tests/test_transit_data_import.py` (25 tests)
-- [x] Full suite green: 431 passed / 0 failed
-- [x] Phase 2: geocoding service + script + provenance columns + tests
-- [x] Phase 2 follow-up: live geocoding run against Nominatim (71/105 resolved,
-      34 UNKNOWN, DATA_GAPS.md §7.1 and SOURCES.md §6 updated)
-- [ ] Phase 3: OSRM route geometry + provenance + geometry API + tests
-- [ ] Phase 4: enhanced realtime API (bearing/ETA/delay) + tests
-- [ ] Phase 5: admin daily-trip generation endpoint + tests
-- [ ] Phase 6: frontend API contract finalization + tests
-- [ ] Remember: clean transit tables before pytest after running import script
+**No code is written or changed by this document.** It is a plan
+revision only.
 
 ---
 
-# SESSION HANDOFF — Phase 2 COMPLETE (2026-08-17, agent handoff)
+## 1. Audit — What Changes From the Prior AI Revision, and Why
 
-## Status: Phase 2 (Geospatial Enrichment) is fully complete, including live
-## geocoding against Nominatim. 88 of 122 stops now have coordinates.
+The prior revision (one turn ago) got the product framing right — AI
+around a deterministic core, never replacing it — but had two structural
+gaps the senior feedback correctly identifies:
 
-**Test baseline: 447 passed (431 Phase-1 baseline + 16 new Phase 2 tests), 0
-failures.**
+1. **It collapsed "speech" and "reasoning" into one Qwen call in
+   places.** Section 5.1 of the prior plan had Qwen doing intent
+   extraction directly from a transcribed utterance with no clearly
+   separated speech/NLP stage in between (ASR was treated as a
+   preprocessing detail of §6, not an architectural layer in its own
+   right feeding the planner). **This revision fixes that by making the
+   Speech/NLP layer a first-class stage** (§4), with its own contract,
+   sitting strictly below the Qwen Journey Planner and strictly above
+   nothing — it never talks to the routing engine or the database
+   directly.
+2. **It undersold the geospatial layer.** The prior plan treated
+   "location resolution" as a small sub-step of the conversational
+   pipeline (§5.2) and geometry/PostGIS work as leftover data-quality
+   tasks from the original six-phase plan. **This revision promotes
+   geospatial reasoning to its own architectural layer** (§5) — spatial
+   candidate generation, nearby-stop discovery, pedestrian/walking
+   analysis, and route geometry, all backed by the *already-built and
+   already-verified* PostGIS/OSRM/Nominatim infrastructure — sitting
+   between the Qwen Journey Planner and the deterministic
+   routing/optimization stage. This is real, demoable, and does not
+   require new ML.
 
-## What Is Done (Phase 2, all committed)
+Neither fix requires touching `routing/graph.py`, `routing/search.py`,
+`simulation/`, `ticketing/`, or `users/` — the deterministic backend
+described in the prior plan's audit (§2, carried forward unchanged
+below) needed no architectural correction. Only the AI-side layering
+needed restructuring, and this document restructures it as a genuine
+five-layer pipeline rather than appending a sixth phase onto a
+four-layer one.
 
-### New files
-- `seeding/geocoding.py` — `Geocoder` Protocol (same shape as
-  `ticketing.payments.provider.PaymentProvider`) + `NominatimGeocoder`, the
-  real implementation wrapping OpenStreetMap's public Nominatim `/search`
-  endpoint. Enforces Nominatim's usage policy (max 1 req/sec, descriptive
-  `User-Agent`, sequential-only). `in_bounding_box()` validates every
-  candidate against the Islamabad/Rawalpindi box (33.5-33.85N, 73.0-73.3E)
-  from plan.md section C - a candidate outside it is rejected, never
-  accepted as a fallback. `query_variants()`/`geocode_stop_name()` try
-  "`<name>, Islamabad, Pakistan`" then "`<name>, Rawalpindi, Pakistan`" in
-  order. Never fabricates a coordinate: no in-bounds candidate -> `None`.
-- `scripts/geocode_stops.py` — CLI: `--dry-run` (look up matches, write
-  nothing), `--limit N` (process only the first N null-coordinate stops, by
-  name - useful for a smoke test once network access exists). Core logic
-  (`geocode_null_coordinate_stops`) takes a plain `AsyncSession` + `Geocoder`
-  so tests can inject a rolled-back session and a fake geocoder with zero
-  real network/database-commit side effects. Only ever queries
-  `Stop.location IS NULL` rows; on a match sets `location` +
-  `coordinate_source="NOMINATIM"` + `coordinate_confidence="APPROXIMATE"`;
-  on no match, leaves `location` NULL and sets
-  `coordinate_confidence="UNKNOWN"` (`coordinate_source` stays NULL - nothing
-  was actually sourced).
-- `alembic/versions/c3d4e5f6a7b8_add_stop_coordinate_provenance.py` — adds
-  nullable `stops.coordinate_source` (String(50)) and
-  `stops.coordinate_confidence` (String(20)), chained on `b2c3d4e5f6a7`
-  (Phase 1's last migration).
-- `tests/test_geocoding.py` — 16 tests in three layers: (1) pure
-  `seeding.geocoding` logic against `httpx.MockTransport` - no real network,
-  matching plan.md section L's "mocked Nominatim responses" - covering
-  bounding-box accept/reject, query fallback, HTTP-error -> `GeocodingError`,
-  and the 1-req/sec throttle actually elapsing; (2) import-time provenance
-  (real DB, rolled back) - a stop imported WITH coordinates gets
-  `coordinate_source="SEED_DATUM"` + the dataset's own confidence, a stop
-  imported WITHOUT coordinates gets no provenance yet; (3)
-  `geocode_null_coordinate_stops` against a fake `Geocoder` (real DB, no
-  real network) - only null-location stops are queried/updated, located
-  stops are never even queried, dry-run writes nothing, limit is respected.
-
-### Modified files
-- `db/models/stop.py` — added `coordinate_source: Mapped[str | None]`
-  (String(50)) and `coordinate_confidence: Mapped[str | None]` (String(20)),
-  both nullable, with the value-set docstring from plan.md section C.
-- `seeding/import_schema.py` — `ImportStop` gained
-  `confidence: str | None = None`, carrying a source dataset's own
-  per-stop confidence rating through to the importer (doc comment
-  explains this is copied onto `Stop.coordinate_source`/
-  `coordinate_confidence` only for stops that already have a location).
-- `seeding/transit_data_importer.py` — `transit_data_to_dataset` now passes
-  `confidence=stop.get("confidence")` into each `ImportStop` (module
-  docstring's stops-mapping bullet updated to match).
-- `seeding/importer.py` — `_get_or_create_stop` gained a `confidence`
-  parameter; when CREATING a new stop (never on update/move), if the stop
-  has a location it's tagged `coordinate_source="SEED_DATUM"` +
-  `coordinate_confidence=confidence`; if it has no location, both stay
-  `None` (left for `seeding.geocoding` to fill in later). Single call site
-  in `import_dataset` updated to pass `import_stop.confidence` through.
-
-## Design decision worth flagging for the next agent
-
-plan.md section C's wording for `coordinate_confidence` ("carried from
-transit_data.json's confidence field, or set during enrichment") is
-slightly ambiguous about whether the JSON's per-stop `confidence` value
-(which every stop has, located or not - see `docs/transit_data.json`)
-should be copied onto `coordinate_confidence` even for NULL-coordinate
-stops. **I chose NOT to do that**: `coordinate_confidence` is only set at
-import time for stops that already have a location (mirroring
-`coordinate_source`, which obviously can't be `"SEED_DATUM"` for a stop
-with no coordinate at all). A null-coordinate stop gets no provenance
-until `scripts/geocode_stops.py` actually resolves (or fails to resolve)
-it. Rationale: `coordinate_confidence` is documented as being about trust
-in the *coordinate specifically* ("how much to trust `location`"), and a
-stop with `location IS NULL` has no coordinate to rate yet - carrying over
-the JSON's identity/naming confidence (e.g. "RECONSTRUCTED" for a stop
-whose *name* came from a secondary source) onto a coordinate field would
-conflate two different kinds of confidence. If a future agent disagrees,
-this is a one-line change in `seeding/importer.py`'s `_get_or_create_stop`.
-
-## Live geocoding run completed (2026-08-17)
-
-Ran `python scripts/geocode_stops.py` against the live imported dataset (122
-stops, 105 with null coordinates). Results:
-
-- **71 stops resolved** — `coordinate_source="NOMINATIM"`,
-  `coordinate_confidence="APPROXIMATE"`. All within bounding box.
-- **34 stops unresolved** — `coordinate_confidence="UNKNOWN"`, location left
-  NULL. Mostly informal/colloquial stop names not in OSM ("Bar Council",
-  "College Morh", "Metro CNG", "Abpara Market", etc.).
-- **17 SEED_DATUM stops** — unchanged, coordinates untouched.
-- **Total: 88 of 122 stops now have coordinates (72%).**
-- Two display-name mismatches noted: "6th Road" → "Korang Town Road",
-  "Metropolitan Corporation" → "Street #15" — acceptable ambiguity.
-
-Graph builds with 88 nodes (up from 17). The 34 unresolved stops are
-skipped by graph construction and the simulator.
-
-DATA_GAPS.md §7.1 and SOURCES.md §6 have been updated with actual results.
-
-## Verified this session
-- `python scripts/import_transit_data.py --service-date 2026-08-16`:
-  agencies 2, stops 122 (17 `SEED_DATUM`/`APPROXIMATE`), routes 26,
-  route_stops 115, trips 275, stop_times 6242.
-- `alembic upgrade head` applies `c3d4e5f6a7b8` cleanly.
-- Full suite: 447 passed, 0 failed.
-- `python scripts/geocode_stops.py --dry-run`: 71 geocoded, 34 unresolved.
-- `python scripts/geocode_stops.py` (live): same results as dry-run.
-- DB cleaned back to empty baseline after verification.
-- Full pytest suite run post-clean: 447 passed, 0 failed.
-
-## What Remains
-
-### Next move (Phase 3 — Route Geometry via OSRM), see §D / §M-Phase 3
-1. `db/models/route.py` — add `geometry_source`, `geometry_confidence`
-   columns; migration `xxxx_add_route_geometry_provenance.py`.
-2. `seeding/route_geometry.py` — OSRM road-snapping service (httpx, already
-   in requirements). Public demo server `https://router.project-osrm.org`
-   for now; same network-access caveat as Phase 2 applies in this sandbox.
-3. `scripts/generate_route_geometry.py` — CLI.
-4. `api/transit/router.py` / `schemas.py` — expose `Route.path` as GeoJSON;
-   new `GET /api/transit/routes/{id}/geometry` endpoint.
-5. `tests/test_route_geometry.py` (mocked OSRM responses, same pattern as
-   `tests/test_geocoding.py`'s `httpx.MockTransport` usage).
-6. Only routes whose stops ALL have coordinates can get geometry - which
-   depends on Phase 2's geocoding run having actually happened first (or on
-   routes that only use the 17 already-located seed stops). Check
-   `coordinate_source IS NOT NULL` coverage per route before assuming a
-   route is geometry-eligible.
+**Phases that are restructured, not merely appended to**, relative to
+the prior plan:
+- The prior "Phase B — Conversational AI Core" is split into three
+  distinct layers with three distinct contracts: Speech/NLP (§4), Qwen
+  Journey Planner (§6), and Geospatial Transit Intelligence (§5) — each
+  independently buildable, independently testable, and independently
+  swappable.
+- The prior "Phase 0 — Research Spike" is kept but re-scoped: it no
+  longer needs to resolve *whether* AI is architecturally sound (this
+  document resolves that), only which specific Alibaba service
+  instances are reachable on the hackathon account (§10).
+- The prior ETA ML phase (Phase D) is **kept exactly as previously
+  designed**, per explicit instruction — it was already a separate,
+  correctly-staged component and needed no restructuring, only
+  reaffirmation (§8).
+- Route filtering, fares, ticketing, admin, map, and account sections
+  are carried forward with no substantive change — reaffirmed in §9 for
+  completeness, not re-litigated.
 
 ---
 
-# SESSION HANDOFF — Phase 3 COMPLETE (2026-08-17, agent handoff)
+## 2. Already-Verified Foundation (unchanged — do not rebuild)
 
-## Status: Phase 3 (Route Geometry via OSRM) is code-complete. Live OSRM
-## generation WAS run and verified on 2026-08-17 (verification/integration agent)
-## — see the "Verification Agent Handoff" section below. The mechanism works
-## end-to-end against real OSRM + PostGIS, but generated geometry for ZERO real
-## routes: after Phase 2's geocoding, no route's full ordered stop sequence is
-## located, and the script correctly never fabricates a line for an unlocated stop.
+Everything in this section is implemented, tested (532 tests, 0 failed,
+0 skipped, live-verified against Docker Postgres/PostGIS), and treated
+as **the reference foundation Qoder should be told is done** at
+kickoff.
 
-**Test baseline this session: 8 new pure tests passed + 9 new DB-backed
-tests correctly SKIPPED (no live Postgres reachable here). Full suite:
-220 passed, 242 skipped, 2 pre-existing DB-connection failures unrelated
-to this change (same 2 fail identically on the pre-Phase-3 tree - they
-require a live DB this sandbox doesn't have). 464 tests collected total
-(447 Phase-2 baseline + 17 new Phase 3 tests).**
+- **Transit data**: agencies, routes, stops, route-stops, trips,
+  stop-times — imported, idempotent, provenance-tracked.
+- **Geospatial enrichment**: Nominatim-backed stop geocoding, 88 of 122
+  stops located, provenance/confidence tracked, 34 stops still
+  `UNKNOWN`.
+- **Route geometry**: OSRM road-snap pipeline, verified working end to
+  end; 0 real routes currently have a full located stop sequence, so 0
+  currently have generated geometry (a data-coverage gap, not a pipeline
+  defect).
+- **Bus simulation**: deterministic, time-based, route-aware position
+  interpolation (bearing, speed), falls back to straight-line without
+  geometry.
+- **Realtime/ETA REST APIs**: working; not yet source-labeled
+  (`source: "simulated"` designed, not yet wired).
+- **Timetable-driven trip generation**: real canonical timetables for 4
+  of ~22 known routes (FR-01/04/07/14); the rest have no stop-level
+  schedule (headway-only or undocumented).
+- **Frontend API contract**: CORS, route geometry embedded in journey
+  legs — tested.
+- **Journey planner (`routing/`)**: working MVP — static graph,
+  Dijkstra, 3 objectives (fastest / fewest transfers / least walking),
+  single result per request, no filters yet, `departure_time` accepted
+  but currently inert.
+- **Fares**: DB-driven `FareRule`, flat per-boarding formula, in-code
+  default fallback — not hardcoded in the "scattered constants" sense,
+  not distance-based.
+- **Ticketing + QR**: full `ACTIVE → USED/EXPIRED/REVOKED` state
+  machine, signed opaque QR payload, atomic validate-and-consume,
+  ownership checks.
+- **Payments**: scaffolded only (`PaymentProvider` Protocol,
+  always-succeeds dev implementation) — by design.
+- **User accounts**: register/login/JWT/bcrypt, two roles
+  (`passenger`/`admin`). No password reset/refresh tokens yet.
+- **Admin backend**: seed/import/graph-rebuild/trip-generation
+  endpoints, correctly `ROLE_ADMIN`-gated. No stop/route/fare/user CRUD
+  yet.
+- **Security posture**: no rate limiting yet anywhere; realtime
+  simulation *control* endpoints are deliberately unauthenticated today
+  (fine for local dev, not for a hosted demo URL).
 
-## What Is Done (Phase 3, all in this session's tree — not yet run live)
-
-### New files
-- `seeding/route_geometry.py` — `RouteGeometryProvider` Protocol (same
-  shape as `seeding.geocoding.Geocoder`) + `OSRMRouteGeometryProvider`,
-  wrapping OSRM's public demo server's `route` service (`driving`
-  profile, `overview=full&geometries=geojson`) via the *plain* `route`
-  endpoint (not `trip`/TSP) so waypoints are never reordered — a transit
-  route's stop sequence is fixed. `RouteGeometryResult` carries
-  `coordinates` (GeoJSON/WKT `(lon, lat)` order — the one place in this
-  codebase that's `(lon, lat)` instead of the usual `(lat, lon)`, called
-  out explicitly in the docstring) and `leg_distances_m` (one per
-  consecutive waypoint pair, from OSRM's own per-leg road distance, not
-  Haversine). `cumulative_distances_m()` turns leg distances into
-  per-stop `distance_along_route_m` values (starts at 0.0, one more entry
-  than legs). `linestring_wkt()` builds the `SRID=4326;LINESTRING(...)`
-  string assigned directly to `Route.path`, mirroring how
-  `seeding.importer` already assigns `Stop.location` as a WKT string.
-  Never fabricates: a route OSRM can't connect raises `RouteGeometryError`
-  rather than returning a straight-line/guessed polyline.
-- `scripts/generate_route_geometry.py` — CLI: `--dry-run`, `--limit N`.
-  Core logic `generate_route_geometry(session, provider, *, dry_run,
-  limit)` takes a plain `AsyncSession` + `RouteGeometryProvider` (same
-  test-injection pattern as `scripts.geocode_stops
-  .geocode_null_coordinate_stops`). `_eligible_routes()` finds every
-  Route with >=2 `RouteStop`s where **every** stop in the sequence has a
-  non-null `location` (extracted via `ST_X`/`ST_Y`, same pattern as
-  `api/transit/router.py`); a route with even one unlocated stop is
-  skipped entirely — untouched, not marked UNKNOWN, since it was never
-  actually attempted. On success: `Route.path` = WKT LineString,
-  `geometry_source="OSRM"`, `geometry_confidence="OSM-DERIVED"`, and each
-  `RouteStop.distance_along_route_m` is overwritten from the cumulative
-  OSRM leg distances. On OSRM failure for an eligible route:
-  `geometry_confidence="UNKNOWN"`, `path`/`geometry_source` left
-  untouched (nothing was actually sourced — same asymmetry as
-  `geocode_stops.py`'s handling of `coordinate_source` on a failed
-  geocode).
-- `alembic/versions/d4e5f6a7b8c9_add_route_geometry_provenance.py` — adds
-  nullable `routes.geometry_source` (String(50)) and
-  `routes.geometry_confidence` (String(20)), chained on `c3d4e5f6a7b8`
-  (Phase 2's head).
-- `tests/test_route_geometry.py` — 17 tests in three layers (mirrors
-  `tests/test_geocoding.py`'s structure exactly): (1) pure
-  `linestring_wkt`/`cumulative_distances_m` + `OSRMRouteGeometryProvider`
-  against `httpx.MockTransport` — 8 tests, all passing in this sandbox
-  with no network; (2) `generate_route_geometry` against a fake
-  `RouteGeometryProvider` (real DB, no real network) — eligibility
-  (>=2 stops all located; single-stop and unlocated-stop routes both
-  skip with `eligible` not incremented), success path (path/provenance/
-  distance-per-stop all correct), failure path (`UNKNOWN`, nothing else
-  touched), `--dry-run`, `--limit` — 6 tests; (3) API —
-  `GET /transit/routes/{id}` embeds a null geometry before generation,
-  `GET /transit/routes/{id}/geometry` returns the generated GeoJSON
-  LineString after it, both endpoints agree, 404 for a missing route — 3
-  tests. All 9 DB-backed tests SKIP (not fail) in this sandbox, same
-  convention as every other DB-backed test file.
-
-### Modified files
-- `db/models/route.py` — added `geometry_source`/`geometry_confidence`
-  columns, same shape/docstring convention as `Stop.coordinate_source`/
-  `coordinate_confidence`.
-- `api/transit/schemas.py` — new `RouteGeometryRead` (GeoJSON-shaped:
-  `type`, `coordinates` as `list[tuple[float, float]] | None`,
-  `geometry_source`, `geometry_confidence` — explicitly all-null before
-  generation, not an error/omitted field); `RouteDetail` gained a
-  required `geometry: RouteGeometryRead` field.
-- `api/transit/router.py` — module docstring's "`Route.path` is
-  intentionally NOT serialized" paragraph is now the opposite (it IS,
-  as of Phase 3) — updated in place. New `_route_geometry_json_expr()`
-  (`ST_AsGeoJSON(cast(Route.path, Geometry))`, same extraction pattern as
-  the existing lat/lng helpers) and `_route_geometry_read()` builder.
-  `get_route` now also selects that expression and populates
-  `RouteDetail.geometry`. New endpoint `GET /transit/routes/{route_id}/
-  geometry` returning just `RouteGeometryRead` (404 if the route doesn't
-  exist), for a client that only needs to redraw the polyline.
-
-## Why nothing was run live this session
-
-This sandbox has **no live PostgreSQL** (no `docker`, no reachable
-`localhost:5432`) and **no outbound network access to
-`router.project-osrm.org`** (egress here is allow-listed to package
-registries only — see the environment's own network-configuration note,
-same restriction Phase 2's live-geocoding run explicitly worked around by
-running from a different environment). Everything that COULD be verified
-without those was: `python -m py_compile` on every new/changed file,
-`pytest --collect-only` (464 tests collect with zero import errors), the
-full suite run (220 passed / 242 skipped / 2 pre-existing unrelated DB
--connection failures, identical failure signature before and after this
-change), and all 8 pure (mocked-HTTP) `test_route_geometry.py` tests
-passing outright.
-
-## What Remains
-
-### DONE — run this live, from an environment with DB + `router.project-osrm.org` access
-(executed 2026-08-17 by the verification/integration agent; see the next
-section for the full write-up):
-
-```
-alembic upgrade head          # applies d4e5f6a7b8c9
-python scripts/import_transit_data.py --service-date <today>
-python scripts/geocode_stops.py                 # if not already run for this DB
-python scripts/generate_route_geometry.py --dry-run   # sanity check first
-python scripts/generate_route_geometry.py              # live
-```
-
-The dry-run and live runs both reported **0 eligible routes** — the
-correct, honest outcome given that no route's full stop sequence is
-located (Red Line is 1 stop short; FR-01/04/07/14 are 10/4/9/10 short).
-The OSRM provider and persistence pipeline were verified end-to-end on a
-throwaway two-stop route built from real located stops (geometry generated,
-stored to PostGIS, provenance + per-stop distances correct, idempotent,
-dry-run writes nothing, limit works) and the throwaway route was deleted
-afterward. The database was cleaned back to the empty pytest baseline
-after verification.
-
-### Later phases (see §M, unchanged)
-- **Phase 4** Enhanced realtime API (bearing, stop names, ETA, delay) +
-  optional `Route.path` interpolation in `simulation/engine.py`.
-- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint.
-- **Phase 6** Frontend contract finalization (route geometry in journey
-  legs — `RouteGeometryRead` is already in the right shape for this to
-  reuse directly, not a new schema — CORS, documented response shapes).
-
-### Known open items / thinking
-- `generate_route_geometry`'s `--limit` semantics match `geocode_stops
-  .py`'s: "the first N *eligible* candidates" (ordered by `short_name`),
-  not "the first N routes overall" — a route skipped for having an
-  unlocated stop doesn't count against the limit.
-- Re-running `generate_route_geometry.py` on a route that already has
-  OSRM-derived geometry **overwrites** it unconditionally (no "don't
-  touch existing geometry" guard, unlike `geocode_stops.py`'s stop
-  coordinates). This is deliberate: unlike a stop's SEED_DATUM coordinate
-  (a real, curated fact worth protecting), OSRM geometry is fully
-  re-derivable from the same inputs every time — there is no
-  higher-trust source to accidentally clobber yet. If `geometry_source`
-  is ever `"MANUAL_VERIFIED"` (not produced by any code today), a future
-  agent should add the same protect-existing-higher-trust-source guard
-  `_get_or_create_stop` has for `SEED_DATUM`.
-- `RouteStop.distance_along_route_m` is silently overwritten by a
-  successful geometry generation, even if some other process had set it
-  before. There's no plan.md guidance either way here; treated the same
-  as `Route.path` itself (OSRM is the single source of truth for both,
-  together, in one atomic pass) rather than protecting one field but not
-  the other from the same regeneration.
-
-## Active Todo List (for next agent)
-- [x] Phase 1 import pipeline + migrations + tests (431 passed)
-- [x] Phase 2 geocoding service + script + provenance + tests + live run
-      (447 passed, 88/122 stops located)
-- [x] Phase 3 OSRM route geometry service + script + provenance columns +
-      API exposure + tests (464 tests collect; 8 new pure + 9 new DB tests
-      all pass against live PostGIS)
-- [x] Phase 3 follow-up: live OSRM generation run completed 2026-08-17 —
-      `alembic upgrade head` + import + geocode + geometry script all run
-      against real Docker PostGIS; OSRM reached and pipeline verified
-      end-to-end on a throwaway 2-stop route; **0 real routes eligible**
-      (no route fully located); handoff + docs updated with actual results
-- [ ] Phase 4: enhanced realtime API (bearing/ETA/delay) + optional
-      `Route.path` interpolation in `simulation/engine.py` + tests
-- [ ] Phase 5: admin daily-trip generation endpoint + tests
-- [ ] Phase 6: frontend API contract finalization + tests
-- [ ] Remember: clean transit tables before pytest after running any
-      import/enrichment script that commits
+**Nothing above needs architectural change for the hackathon.** The
+hackathon's job is to build the AI/geospatial/voice layers around it and
+hand the combined system a real, judged demo.
 
 ---
 
-# SESSION HANDOFF — Phase 3 VERIFICATION/INTEGRATION COMPLETE (2026-08-17, verification agent)
+## 3. Final Layered Architecture
 
-## Status: Phase 3 verified and stabilized against a live Docker PostgreSQL/PostGIS
-## + real OSRM. **464 tests pass (447 Phase-2 baseline + 17 Phase 3), 0 failures,
-## 0 skips.** One genuine test bug fixed (see below).
+```
+                                    User
+                                     │
+                          ┌──────────┴──────────┐
+                          │    Voice  /  Text     │
+                          └──────────┬──────────┘
+                                     │
+                     ┌───────────────▼───────────────┐
+                     │      LAYER 1 — Speech / NLP       │   deterministic-ish,
+                     │  - ASR (dedicated speech model)    │   model-assisted,
+                     │  - language detection               │   NOT the agent
+                     │  - Urdu / Roman-Urdu / English       │
+                     │    normalization to clean text        │
+                     └───────────────┬───────────────┘
+                                     │ normalized text + detected_language
+                     ┌───────────────▼───────────────┐
+                     │  LAYER 2 — Qwen Journey Planner    │   GENUINE AI:
+                     │            (agent)                   │   reasoning,
+                     │  - intent understanding               │   tool selection,
+                     │  - preference/constraint extraction    │   clarification,
+                     │  - clarification dialogue               │   multi-turn
+                     │  - TOOL SELECTION (calls Layer 3/4)      │   context
+                     │  - multi-turn context                     │
+                     │  - grounded explanation of results          │
+                     └───────────────┬───────────────┘
+                          tool calls  │  ▲ tool results
+                     ┌───────────────▼──┴────────────┐
+                     │  LAYER 3 — Geospatial Transit      │   DETERMINISTIC,
+                     │            Intelligence               │   PostGIS/OSM/OSRM-
+                     │  - location/place-name resolution      │   backed. No LLM,
+                     │  - PostGIS spatial candidate queries     │   no new ML.
+                     │  - nearby-stop discovery                   │   Already mostly
+                     │  - pedestrian/walking-distance analysis     │   built (§2).
+                     │  - route geometry (OSRM)                      │
+                     │  - transit candidate-set generation             │
+                     └───────────────┬───────────────┘
+                        stop/edge candidates
+                     ┌───────────────▼───────────────┐
+                     │  LAYER 4 — Deterministic Routing /  │   DETERMINISTIC.
+                     │            Optimization               │   Dijkstra lives
+                     │  - valid transit path search             │   here as an
+                     │    (Dijkstra over the transit graph)       │   implementation
+                     │  - transfers, walking, travel time           │   detail — see §7.
+                     │  - route filtering / ranking                    │
+                     │  - fare constraint application                    │
+                     └───────────────┬───────────────┘
+                                     │ authoritative JourneySearchResponse
+                     ┌───────────────▼───────────────┐
+                     │      Authoritative Journey Result   │
+                     └───────────────┬───────────────┘
+                                     │
+                     ┌───────────────▼───────────────┐
+                     │  LAYER 2 (return path) — Qwen        │   GENUINE AI:
+                     │  grounded explanation                  │   narrates ONLY
+                     │  (+ optional Layer 1 TTS on the way out) │   what Layer 4
+                     └───────────────┬───────────────┘   returned.
+                                     │
+                          ┌──────────▼──────────┐
+                          │   User + Interactive Map │
+                          └──────────────────────┘
 
-## Live-data verification performed
 
-1. **Environment**: Docker Desktop running; `backend/docker-compose.yml` PostGIS
-   16-3.4 container started; DB was empty (alembic at `c3d4e5f6a7b8`).
-2. **Migration**: `alembic upgrade head` applied `d4e5f6a7b8c9` cleanly; exactly one
-   head (`d4e5f6a7b8c9`); `downgrade -1` then `upgrade head` round-trip verified.
-3. **Import** (`scripts/import_transit_data.py --service-date 2026-08-17`): 2 agencies,
-   122 stops, 26 routes, 115 route_stops, 275 trips, 6242 stop_times. 17 stops had
-   SEED_DATUM coordinates.
-4. **Geocoding** (`scripts/geocode_stops.py`, live Nominatim): 71 of 105 null-coord
-   stops resolved (NOMINATIM/APPROXIMATE), 34 UNKNOWN — **identical result to Phase 2's
-   documented live run**. Total 88/122 located.
-5. **Geometry generation** (`scripts/generate_route_geometry.py`, live OSRM):
-   - `--dry-run` and the live run both reported **0 eligible routes**. Verified directly
-     in the DB why: NO route has its full ordered stop sequence located — Red Line 22/23
-     (only `Peshawar Morr (Interchange)` missing, genuinely UNKNOWN after geocoding),
-     FR-01 16/26, FR-04 21/25, FR-07 14/23, FR-14 8/18. The script's "skip a route with
-     even one unlocated stop" rule is exactly why 0 is correct — it never fabricates.
-   - **End-to-end mechanism verified** using a throwaway 2-stop route built from two
-     real SEED_DATUM stops (`Ammar Chowk`, `Bank Road`): real OSRM reached, valid
-     GeoJSON LineString returned (82 points), PostGIS accepted it, `ST_Length` ~2.6 km,
-     waypoints in order, `geometry_source="OSRM"`/`geometry_confidence="OSM-DERIVED"`
-     persisted, `RouteStop.distance_along_route_m` = (0.0, 2612.1), re-run idempotent,
-     `--dry-run` wrote nothing, `--limit 1` respected. Throwaway route deleted
-     afterward; DB restored to the 26-route imported baseline, then cleaned to the empty
-     pytest baseline.
-6. **API**: Phase 3 tests cover `GET /transit/routes/{id}` embedded geometry (null
-   before generation, GeoJSON after) and `GET /transit/routes/{id}/geometry`, plus 404 —
-   all pass.
+  Separate, parallel component (unchanged from prior plan, reaffirmed §8):
 
-## Genuine bug found and fixed
+  simulation/history → ETA training data → ML model → Alibaba PAI-EAS → ML ETA
+                                                                              │
+                                          deterministic simulation ETA ──────┴──→ always-available fallback
+```
 
-- `tests/test_route_geometry.py::test_generate_route_geometry_respects_limit` created
-  3 routes under the **same** agency name, violating `agencies.name` unique constraint
-  → `IntegrityError` against real PostGIS. It had never actually run (the original
-  Phase 3 sandbox could only skip DB tests). Fixed by giving each of the 3 iterations
-  its own agency name. This is the only code change the verification agent made beyond
-  docs/handoff.
+**Five layers, five contracts, five owners:**
 
-## Non-bugs confirmed as correct behavior (not "failures")
-
-- 0 eligible real routes is the intended, honest outcome (see above), not a bug.
-- Docs originally said "live run has not happened" — those passages were updated with
-  the actual live results (DATA_GAPS.md §6, MAP_AND_REALTIME_RECOMMENDATIONS.md,
-  SIMULATION_DATA_SPEC.md, TRANSIT_RESEARCH.md §9/§16, SOURCES.md §4a).
-- `--limit` counts eligible candidates only (matches `geocode_stops.py` convention).
-- OSRM geometry is road-snapped (`OSM-DERIVED`), never claimed to be the BRT's real
-  alignment; docs preserve that distinction throughout.
-
-## What remains before Phase 4
-
-- Nothing blocks Phase 4. Phase 3's geometry generation is code-complete, live-verified,
-  and the DB is back at the empty pytest baseline. When any route's full stop sequence
-  becomes located (e.g. manually resolving `Peshawar Morr (Interchange)` or the ~34
-  UNKNOWN stops), `python scripts/generate_route_geometry.py` will populate `Route.path`
-  for it. `simulation.engine` polyline interpolation remains Phase 4 work.
+| Layer | What it is | Owner technology | New build for hackathon? |
+|---|---|---|---|
+| 1. Speech/NLP | ASR + language ID + text normalization | Dedicated Alibaba speech model(s) — NOT the Qwen chat/agent model | Yes — thin integration |
+| 2. Qwen Journey Planner | Conversational agent: understands, clarifies, selects tools, explains | Qwen chat model via Model Studio, tool-calling mode | Yes — the core AI build |
+| 3. Geospatial Transit Intelligence | Spatial reasoning: resolves places, finds candidate stops/edges, computes walking distance, supplies geometry | PostGIS + OSRM + Nominatim — **already built**, being exposed as callable tools | Mostly integration, not new engineering |
+| 4. Deterministic Routing/Optimization | Finds valid paths, applies filters, computes fares | `routing/` package — **already built** (Dijkstra inside) | Extend with filters/multi-candidate (already scoped) |
+| 5. Map/Realtime/Ticketing/Auth | Everything the user sees and transacts with | Existing APIs + frontend | Mostly integration |
 
 ---
 
-# SESSION HANDOFF — Phase 4 COMPLETE, NOT YET LIVE-VERIFIED (2026-08-17, agent handoff)
+## 4. Layer 1 — Speech / NLP (dedicated, separate from the reasoning agent)
 
-## Status: Phase 4 (Enhanced Realtime API) is code-complete and passing in a sandbox
-## with no Docker/no live Windows environment. **This has NOT been verified against a
-## real Docker Postgres/PostGIS environment by this agent** - that verification is
-## expected to happen next, by OpenCode, the same way it verified Phase 3.
+### 4.1 Why this is a separate layer
 
-**Test baseline this session: 500 passed, 0 failed, 0 skipped, in a manually-installed
-(non-Docker) Postgres 16 + PostGIS sandbox** (464 Phase-3-verified baseline + 36 new
-Phase 4 tests). No skips this session because this sandbox DOES have a real, reachable
-Postgres (unlike the original Phase 3 authoring session) - unlike route geometry, Phase
-4 needed no external network service (no Nominatim, no OSRM), so there was nothing this
-sandbox categorically couldn't reach. The one thing still unverified is whether these
-same 36 tests pass identically against the actual Docker Postgres/PostGIS environment
-OpenCode used for Phase 1-3 - there is no specific reason to expect a difference (same
-PostGIS version family, same SQL), but it has not been checked directly.
+The senior feedback is architecturally correct and worth stating
+plainly: **transcription and reasoning are different jobs.** A model
+that is good at turning audio into accurate text is not the same model
+that should be reasoning about travel preferences, and conflating them
+either wastes the reasoning model's context budget on acoustic modeling
+it isn't specialized for, or (worse) lets transcription noise get
+silently "corrected" by an LLM guessing what the user probably meant —
+which is exactly the kind of invisible hallucination risk this project
+must avoid. Keeping ASR as its own layer with its own, inspectable
+output (plain normalized text) means Layer 2's input is always a clean,
+auditable string, and any transcription errors are visible and
+debuggable independently of the reasoning layer.
 
-## What Is Done (Phase 4, all in this session's tree)
+### 4.2 Responsibilities (strictly bounded)
 
-**Database changes: none** (plan.md section M confirms Phase 4 needs none - correct,
-verified: no new migration was added or needed).
+- **ASR**: audio → raw transcribed text. Dedicated Alibaba Cloud speech
+  models (Qwen3-ASR / Fun-ASR / Paraformer via Model Studio — confirmed
+  current product family, **not** the Qwen chat/LLM model used in Layer
+  2). Real-time (WebSocket streaming) or file-based, per UX needs.
+- **Language detection**: identify `en` / `ur` / `roman-ur` / `mixed`
+  from the transcribed (or typed) text. This can be a lightweight
+  classifier or a single fast Qwen call used strictly as a
+  classification utility (not as the conversational agent) — an
+  implementation choice made at kickoff, not fixed here, since either
+  is cheap and fast.
+- **Normalization**: light cleanup (script normalization, removing ASR
+  disfluency artifacts where the chosen model supports it, e.g.
+  Paraformer's `disfluency_removal_enabled`) — text hygiene, not
+  semantic interpretation.
+- **Text-to-speech (optional output path)**: authoritative narration
+  text (produced by Layer 2, grounded in Layer 4's output) → audio, via
+  a dedicated Alibaba TTS model (CosyVoice/Qwen-TTS). Same
+  separation-of-concerns logic applies in reverse: the TTS model's job
+  is pronunciation and prosody, not deciding what to say.
 
-### New files
-- `api/transit/realtime/eta_router.py` — `GET /transit/realtime/vehicles/{vehicle_id}/eta`
-  (plan.md section G/H/I). Kept as its own router (not folded into `router.py`) purely
-  to match the file plan.md's Phase 4 list names. Returns every `StopTime` on the
-  vehicle's current trip with `sequence >=` the sequence of `next_stop_id` (or
-  `current_stop_id` for the single-stop-schedule edge case where there's no next stop
-  but the trip also isn't `completed`); `etas: []` once `status == "completed"` - not
-  an error. `404` under the same condition as `GET /vehicles/{vehicle_id}` (no active
-  position). `estimated_arrival` always equals `scheduled_arrival` and
-  `delay_seconds` is always `0.0` (plan.md section I: a simulated vehicle IS the
-  schedule, no independent "actual" position exists to diverge from it).
-- `tests/test_engine_geometry_interpolation.py` — 12 pure tests (no DB) for
-  `simulation.geo.point_along_polyline` and `compute_position_at`'s new
-  `route_geometry` parameter: following a bend vs. a straight chord, bearing matching
-  the local polyline segment (not the overall stop-to-stop bearing), clamping,
-  `route_geometry=None` reproducing pre-Phase-4 behavior byte-for-byte (the explicit
-  regression guard for "additive, not a replacement"), and falling back to
-  straight-line when the supplied geometry doesn't actually cover the stop pair in
-  order (never fabricates a wrong-direction position).
-- `tests/test_enhanced_realtime.py` — 13 DB-backed tests against the REAL `main.app`
-  (unlike the older `tests/test_realtime_api.py`, which builds its own isolated mini
-  app) with `get_session` overridden - this also proves `eta_router`/`router.py` are
-  correctly mounted via `api/router.py`, not just that the underlying functions work.
-  Covers: route/stop name resolution, bearing on a known-direction route, speed
-  non-negativity, delay always exactly `0.0` when a next stop exists, all
-  next-stop/ETA/delay/bearing fields `None` together for a `completed` trip, a
-  route WITH real `Route.path` geometry set directly in the DB actually changing the
-  reported bearing (proves `simulation.provider._load_route_geometry` wiring works,
-  not just the pure engine math), a route with NO geometry (today's universal real
-  case) behaving exactly as before, and the new ETA endpoint's 404/ordering/
-  completed-trip-is-empty/scheduled-arrival-cross-check behavior.
+**What Layer 1 explicitly does NOT do:** intent extraction, preference
+interpretation, clarification, tool selection, or anything that requires
+understanding *what the user wants* rather than *what the user said*.
+That boundary is what makes Layer 2 genuinely an agent rather than a
+rebranded string-processing step.
 
-### Modified files
-- `simulation/geo.py` — added `compute_bearing` (great-circle initial bearing,
-  degrees, normalized `[0, 360)`) and `point_along_polyline` (snap-`start`/`end` to
-  their nearest polyline vertex by straight-line distance, then interpolate by arc
-  length between those two vertices - **documented simplification**: nearest-VERTEX,
-  not nearest-point-on-segment, acceptable at OSRM's typical vertex density, same
-  spirit as this file's pre-existing `interpolate_point` simplification). Returns
-  `None` (never fabricates) when `end`'s nearest vertex isn't strictly after
-  `start`'s, or when both snap to the same vertex.
-- `simulation/engine.py` — `SimulatedPosition` gained `bearing: float | None` and
-  `speed_kmh: float | None`. `compute_position_at` gained an optional
-  `route_geometry: list[Point] | None = None` parameter (plan.md's own pseudocode
-  used `list[tuple[float,float]]`; used the more specific `Point` - a `NamedTuple`
-  subclass of `tuple[float,float]`, so still satisfies that shape - for consistency
-  with every other `simulation.*` signature). Bearing: `None` whenever
-  `next_stop_id is None` (case 2 `completed`, or a degenerate single-stop schedule in
-  case 1); cases 1/3 (stationary) use a straight current-to-next-stop bearing; case 4
-  (`en_route`) uses `point_along_polyline`-derived bearing when `route_geometry`
-  actually covers the segment, else falls back to the same straight bearing. Speed:
-  `0.0` whenever stationary (cases 1-3); in case 4, the CONSTANT implied speed of the
-  whole current inter-stop segment (straight-line/haversine distance ÷ segment
-  duration) - deliberately NOT recomputed from the road-following distance even when
-  `route_geometry` is used for position/bearing, because
-  `simulation.timing.compute_stop_time_offsets` already derived that segment's
-  duration from the SAME straight-line distance assumption (see that module's
-  docstring) - reporting a longer road-distance-based speed here would be
-  inconsistent with the schedule the position itself is honoring, not more accurate.
-  `route_geometry=None` (the default) reproduces every byte of pre-Phase-4 behavior -
-  regression-tested explicitly in `tests/test_engine_geometry_interpolation.py`.
-- `simulation/provider.py` — new `_load_route_geometry(session, route_id)` loads
-  `Route.path` via `ST_AsGeoJSON` (same extraction pattern `api/transit/router.py`
-  and `simulation/trip_builder.py` already use for the identical GeoAlchemy2-WKB
-  problem) and converts GeoJSON's `[longitude, latitude]` pairs to
-  `simulation.geo.Point`'s `(latitude, longitude)` order right at this DB-facing
-  boundary - documented explicitly so every other file under `simulation/` can stay
-  `(lat, lon)`-only throughout, matching `Point`'s own convention, with the one
-  GeoJSON `(lon, lat)` quirk contained to this one function (mirrors how Phase 3's
-  handoff called out the same quirk for `seeding.route_geometry`).
-  `SimulatedVehicleLocationProvider._position_for_trip` now calls it per trip and
-  passes the result through to `compute_position_at`. Since Phase 3 verified 0 real
-  routes currently have geometry, this returns `None` for essentially every real trip
-  today - inert in production data, but wired correctly (see
-  `tests/test_enhanced_realtime.py`'s DB-level geometry test, which sets `Route.path`
-  directly to prove the wiring rather than waiting for real data to exist).
-- `api/transit/realtime/schemas.py` — `VehiclePositionRead` extended with
-  `route_short_name`, `route_color`, `bearing`, `speed_kmh`, `current_stop_name`,
-  `next_stop_name`, `scheduled_arrival_next_stop`, `estimated_arrival_next_stop`,
-  `delay_seconds` (all optional/nullable, matching plan.md section G's example
-  response shape exactly) - purely additive, no existing field removed or retyped.
-  New `ETARead`/`VehicleETAList`.
-- `api/transit/realtime/router.py` — every handler now also takes
-  `session: AsyncSession = Depends(get_session)` (same dependency
-  `api/transit/router.py` already uses) purely to batch-resolve the new display
-  fields a bare `SimulatedPosition` doesn't carry - stop names, route short_name/
-  color, and each active trip's next-stop `StopTime.arrival_offset_s`. Exactly 3
-  extra queries total per request (stop names, route info, StopTime offsets), never
-  N+1 - same batching discipline `api/transit/router.py`'s route-detail endpoint
-  already follows. Deliberately did NOT push this into the `VehicleLocationProvider`
-  Protocol (documented explicitly in the module docstring): a position's identity
-  (where/status/bearing/speed) is the provider's job and must stay swappable for a
-  future real-GPS provider (plan.md section J); resolving how a UUID displays is an
-  ordinary API-presentation concern this router already owned for other reasons.
-  `scheduled_arrival_next_stop` is derived from `position.as_of - elapsed_s`
-  (`== Trip.scheduled_start_time`) plus the next stop's `arrival_offset_s` - no
-  second `Trip` query needed, since `SimulatedPosition` already carries everything
-  required to reconstruct it.
-- `api/router.py` / `api/transit/realtime/__init__.py` — wired `realtime_eta_router`
-  in alongside `realtime_router`/`vehicles_router` (both already always-safe-to-mount,
-  same category); updated the module docstring's integration-note code sample to
-  match.
-- `tests/test_simulation_engine.py` — added `bearing`/`speed_kmh` assertions to the
-  existing fixtures (not-started/at-stop/en-route/completed/single-stop cases) plus
-  standalone `compute_bearing` unit tests (north/east/south/west/degenerate-identical
-  -points cases).
-
-## Design decisions worth flagging for the next agent
-
-1. **Where "compute bearing" lives.** plan.md's Phase 4 file list attributes bearing
-   to BOTH `engine.py` ("Add bearing computation") and `router.py` ("Compute
-   bearing, load stop names"), which read as possibly overlapping. Read this as
-   `engine.py` owning the actual geometry math (kept there deliberately - it's a
-   pure, DB-free computation the existing architecture already isolates in exactly
-   that module) and `router.py` only surfacing the value the engine already
-   computed, alongside the display-name lookups it was already going to need. If a
-   future agent disagrees and wants `router.py` to independently recompute/override
-   bearing, that would duplicate `simulation.geo.compute_bearing` for no clear
-   benefit - flagging so it's a deliberate choice to revisit, not an oversight.
-2. **`speed_kmh` uses the straight-line segment distance, never the road-following
-   one**, even when `route_geometry` is present and used for position/bearing - see
-   `simulation/engine.py`'s modified docstring for the full reasoning (in short:
-   `compute_stop_time_offsets` already fixed this segment's DURATION using the
-   straight-line/`distance_along_route_m` assumption; recomputing speed from a
-   longer road distance over that same fixed duration would just be a different,
-   inconsistent number, not a more accurate one).
-3. **`api/router.py` was modified**, even though earlier phases' handoffs describe it
-   as belonging to "whoever reconciles the three workstreams" / out of a single
-   workstream's ownership bounds. Necessary here because Phase 4 explicitly adds a
-   new endpoint (`GET /vehicles/{id}/eta`) that has to actually be reachable to
-   satisfy the phase's stated goal - an unmounted router isn't a completed feature.
-   Kept the change minimal (three lines: one import, one `include_router` call) and
-   updated the two docstrings (`api/router.py`'s own comment,
-   `api/transit/realtime/__init__.py`'s integration note) that referenced the old
-   two-router state, so they don't go stale.
-4. **Did not touch `simulation/timing.py`** - plan.md section F explicitly says "No
-   changes for routes with real timetable data... `compute_stop_time_offsets()`
-   remains available for demo-trip creation," and nothing in Phase 4's actual file
-   list or goal required a change there. Confirmed by reading it fully before
-   deciding not to touch it, not by assumption.
-5. **Nothing in `docs/*.md` was updated this session** - Phase 4 adds no new external
-   dependency, no new data-quality finding, and no change to what's geocoded/
-   geometry-generated; there was nothing accurate to add to `DATA_GAPS.md`/
-   `SOURCES.md` that Phase 2/3's entries don't already cover. Flagging the absence
-   explicitly so it reads as a decision, not an omission.
-
-## Why this could not be live-verified against Docker this session
-
-This agent's sandbox has no Docker and no ability to reach a Windows host - same
-categorical limitation every prior authoring-agent session in this plan.md has noted
-(Phase 3's authoring session, Phase 2's live-geocoding gap, etc.). What COULD be done
-without Docker WAS done, and unlike Phase 2/3, that turned out to be everything Phase
-4 needs, because Phase 4 requires no external network service (no Nominatim, no OSRM)
-and no schema change - the only new failure mode Docker's real PostGIS could surface
-that this sandbox's manually-installed Postgres 16 + PostGIS couldn't is a genuine
-PostGIS version/behavior mismatch, which is low-probability but NOT zero, and is why
-this is marked "not yet live-verified" rather than "verified":
-
-- `python -m py_compile` on every new/changed file: clean.
-- `pytest --collect-only`: all 500 tests collect with zero import errors.
-- **Full suite run against a real (non-Docker) Postgres 16 + PostGIS: 500 passed, 0
-  failed, 0 skipped** (464 baseline + 36 new). This is a stronger signal than Phase
-  3's original authoring session had (which could only report 220 passed / 242
-  skipped, since it had no reachable Postgres at all) - but it is still not the same
-  Docker Postgres/PostGIS environment OpenCode verified Phase 1-3 against.
-- Did NOT run the live app (`uvicorn main:app`) and hit the new endpoints with a real
-  HTTP client outside of pytest's `ASGITransport` - only in-process ASGI requests
-  were exercised. `ASGITransport` genuinely runs the full FastAPI dependency-
-  injection/routing stack (this is not a mocked shortcut), but a real process
-  boundary (real sockets, real uvicorn) was not exercised.
-- Did NOT verify against the actual 88/122-located, 0-geometry real dataset from
-  Phase 1-3's live runs - every DB-backed test here builds its own small synthetic
-  agency/route/stops/trip, the same convention every other test file in this suite
-  (`test_realtime_api.py`, `test_route_geometry.py`, etc.) already uses. This is
-  consistent with the existing test suite's own established pattern, not a shortcut
-  specific to this session.
-
-## What the next verification session (OpenCode) should run
+### 4.3 Contract with Layer 2
 
 ```
-# From an environment with Docker + a reachable Postgres/PostGIS (no OSRM/Nominatim
-# needed for Phase 4 specifically - only if re-verifying Phase 2/3 too):
-alembic upgrade head          # confirms d4e5f6a7b8c9 is still the head - no new
-                               # migration was added for Phase 4, so this should be a
-                               # no-op if the DB is already there from Phase 3
-pytest -q                     # expect 500 passed, 0 failed, 0 skipped
-pytest tests/test_engine_geometry_interpolation.py tests/test_enhanced_realtime.py \
-       tests/test_simulation_engine.py -q   # the Phase-4-specific subset in isolation
-```
-
-If the DB is currently sitting at the Phase 1-3 real-data baseline (2 agencies, 122
-stops, 26 routes, 275 trips, etc.) rather than empty, remember the operational gotcha
-every prior phase's handoff has repeated: pytest assumes an EMPTY baseline (rolled-
-back transactions on top of empty tables) - clean `stop_times → trips → route_stops →
-routes → stops → agencies` first, or the several tests elsewhere in the suite that
-assert exact row counts / empty-list responses will fail for reasons unrelated to
-Phase 4.
-
-Beyond running the suite, worth spot-checking live (via `curl`/httpie against a
-running `uvicorn main:app`, with at least one trip actually started via
-`POST /api/transit/realtime/simulation/...`):
-- `GET /api/transit/realtime/vehicles` returns `bearing`/`speed_kmh`/
-  `route_short_name`/`current_stop_name` populated (not `null` for a route/stops
-  that actually exist).
-- `GET /api/transit/realtime/vehicles/{id}/eta` returns a plausible per-stop list
-  for a real trip, with `delay_seconds: 0.0` throughout.
-- If ever a real route acquires geometry (currently 0 do - see Phase 3's handoff),
-  re-run this and confirm the vehicle position visibly follows the polyline rather
-  than cutting straight lines between stops; there is no way to demonstrate this
-  against real data until that precondition is met.
-
-## What Remains
-
-### Later phases (see §M, unchanged)
-- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint.
-- **Phase 6** Frontend contract finalization (route geometry in journey legs, CORS,
-  documented response shapes).
-
-## Active Todo List (for next agent)
-- [x] Phase 1 import pipeline + migrations + tests (431 passed)
-- [x] Phase 2 geocoding service + script + provenance + tests + live run
-      (447 passed, 88/122 stops located)
-- [x] Phase 3 OSRM route geometry service + script + provenance columns + API
-      exposure + tests + live-verified against real Docker PostGIS + OSRM
-      (464 passed, 0 real routes eligible - correct, honest outcome)
-- [x] Phase 4 enhanced realtime API (bearing/speed/route+stop names/ETA/delay) +
-      optional Route.path polyline interpolation in `simulation/engine.py` + tests
-      (500 passed in a non-Docker sandbox; NOT yet verified against Docker)
-- [x] Phase 4 follow-up: verified against real Docker Postgres/PostGIS + live
-      uvicorn spot-check (500 passed / 0 failed / 0 skipped; see the
-      "Phase 4 VERIFIED" section below)
-- [ ] Phase 5: admin daily-trip generation endpoint + tests
-- [ ] Phase 6: frontend API contract finalization + tests
-- [ ] Remember: clean transit tables before pytest after running any
-      import/enrichment script that commits
-
----
-
-# SESSION HANDOFF — Phase 4 VERIFIED (2026-08-18, verification agent / OpenCode)
-
-## Status: Phase 4 (Enhanced Realtime API) verified against a live Docker
-## PostgreSQL/PostGIS + a real uvicorn process. **500 tests pass, 0 failures,
-## 0 skips** — identical to the authoring session's sandbox result, now confirmed
-## against the same Docker environment OpenCode used for Phases 1–3.
-
-## Environment used for this verification
-
-- Windows 10, Docker Desktop running; `postgis/postgis:16-3.4` container started
-  via the repository's existing `backend/docker-compose.yml` (no new/foreign DB
-  setup was created). Python 3.13.3, `backend/.venv`, commands run from CMD.
-- DB was at the empty pytest baseline (all tables 0 rows, alembic at
-  `d4e5f6a7b8c9`) when verification started.
-
-## Test results
-
-- **Full suite** (`pytest -q`): **500 passed, 0 failed, 0 skipped** (~3–4 min).
-  Run twice — once on the empty baseline and once after the live spot-check data
-  was cleaned up — both identical.
-- **Phase 4 subset** (`pytest tests/test_engine_geometry_interpolation.py
-  tests/test_enhanced_realtime.py tests/test_simulation_engine.py -q`):
-  **59 passed** (12 geometry-interpolation + 13 enhanced-realtime + 34
-  simulation-engine). All 13 DB-backed `test_enhanced_realtime.py` tests
-  executed against the REAL Docker PostGIS (they carry a `_database_reachable`
-  guard that would have skipped them otherwise) — none skipped, including the
-  synthetic-geometry wiring test `test_vehicle_position_follows_route_geometry_
-  when_present`, which sets `Route.path` directly in the real DB.
-- No test was weakened, deleted, or skipped to make the suite pass — nothing
-  needed fixing. The only code changes in this tree are Claude's Phase 4
-  implementation plus the plan.md handoff (this section).
-
-## Migration status
-
-- `alembic upgrade head` is clean/idempotent: a no-op on this DB (already at
-  `d4e5f6a7b8c9`).
-- Exactly **one** Alembic head: `d4e5f6a7b8c9` (add route geometry provenance,
-  the Phase 3 migration). Linear chain, no unexpected migration changes, no new
-  migration for Phase 4 (correct — plan.md section M says Phase 4 needs none).
-
-## Live HTTP spot-check (real uvicorn, real sockets — the gap the authoring
-## session explicitly could not close)
-
-1. Imported the real canonical dataset (`scripts/import_transit_data.py
-   --service-date 2026-08-18`): 2 agencies, 122 stops, 26 routes, 115
-   route_stops, 275 trips, 6242 stop_times — identical to Phases 1–3.
-2. **Confirmed the "no real geometry" precondition**: all 26 routes have
-   `path IS NULL` and `geometry_source IS NULL`. Stop-coordinate coverage by
-   route (import-only, before any geocoding): FR-01 0/26, FR-04 0/25, FR-07
-   0/23, FR-14 0/18, Red Line 12/23. No real route has its full stop sequence
-   located, so `Route.path` NULL for every real route is the correct, honest
-   state — treated as expected, not a failure (matches Phase 3's handoff).
-3. Started `uvicorn main:app` (real process, port 8000) against Docker PostGIS;
-   lifespan routing-graph build succeeded.
-4. Built a throwaway route `P4-CHK` from two REAL SEED_DATUM stops (Ammar Chowk,
-   Bank Road) + a vehicle — the same pattern Phase 3's verification used for its
-   throwaway geometry route. Started a trip via the real
-   `POST /api/transit/realtime/simulation/routes/{id}/demo-trip` endpoint
-   (status `active`, vehicle assigned).
-5. `GET /api/transit/realtime/vehicles` and `GET /api/transit/realtime/vehicles
-   /{id}` returned all enhanced fields populated over real HTTP:
-   `route_short_name` ("P4-CHK"), `route_color` ("#00FF00"), `bearing`
-   (335.18° — the correct Ammar Chowk→Bank Road heading), `speed_kmh` (20.0,
-   matching the configured 20 km/h), `current_stop_name`/`next_stop_name`
-   ("Ammar Chowk"/"Bank Road"), `scheduled_arrival_next_stop` ==
-   `estimated_arrival_next_stop`, and `delay_seconds: 0.0`.
-6. `GET /api/transit/realtime/vehicles/{id}/eta` returned exactly the one
-   upcoming stop (Bank Road, sequence 2), `delay_seconds: 0.0`, scheduled ==
-   estimated — and `404` for a non-existent vehicle id.
-7. **Geometry wiring proven live**: set a bending `Route.path` LINESTRING on the
-   throwaway route directly in PostGIS (no OSRM needed — real road geometry was
-   NOT fabricated; this is the documented synthetic-path proof). The vehicle's
-   bearing changed from 335° (straight stop-to-stop chord) to ~90° (following
-   the polyline's first leg) and its location moved east along the polyline —
-   proving `simulation.provider._load_route_geometry` → `compute_position_at(
-   route_geometry=...)` → `point_along_polyline` end-to-end in production code
-   against real PostGIS. With `path` reset to NULL (the real-data case), the
-   bearing returns to the straight-line value — the `route_geometry=None`
-   backward-compatible path verified live too.
-8. Everything was torn down: uvicorn stopped, throwaway route/vehicle/trip
-   removed, all transit tables truncated back to the empty pytest baseline, and
-   the full suite re-run green afterwards.
-
-## What remains
-
-- **Phase 5** `POST /api/admin/trips/generate` daily-trip endpoint (plan.md
-  section M-Phase 5). Not started, per the verification brief.
-- The only thing that would change the "0 real routes have geometry" state is
-  resolving the ~34 UNKNOWN stops (e.g. `Peshawar Morr (Interchange)` for the
-  Red Line) so `scripts/generate_route_geometry.py` finds eligible routes; that
-  is a data/enrichment task, not Phase 4 work.
-
----
-
-# SESSION HANDOFF — Phase 5 COMPLETE (2026-08-18, agent handoff)
-
-## Status: Phase 5 (Trip Generation Admin Endpoint) is implemented and passing
-## in a sandbox with a real (non-Docker) PostgreSQL/PostGIS AND a real
-## `uvicorn` process reached over real HTTP with real admin auth. **Not yet
-## verified against the actual Docker Postgres/PostGIS environment** OpenCode
-## used for Phases 1-4 - same category of gap Phase 4's authoring session had,
-## closed here further than Phase 4's authoring session could close it (this
-## session did reach a real HTTP server, unlike Phase 4's authoring session),
-## but still not the specific Docker environment.
-
-**Test baseline this session: 515 passed, 0 failed, 0 skipped** (500 Phase-4-
-verified baseline + 15 new Phase 5 tests), run twice consecutively for
-stability, plus a live spot-check against a real `uvicorn` process (details
-below). DB confirmed clean (all tables 0 rows) after every run in this
-session.
-
-## What Is Done (Phase 5)
-
-**Database changes: none** (plan.md section M says Phase 5 needs none -
-confirmed correct: `alembic upgrade head` was already a no-op at `d4e5f6a7b8c9`
-before any Phase 5 work, and still is after it - no migration was added).
-
-### New files
-- `seeding/trip_generator.py` — the only new module. Deliberately does NOT
-  reimplement Trip/StopTime creation: it finds which ONE route's slice of the
-  canonical `docs/transit_data.json` dataset to hand to the EXISTING,
-  already-tested `seeding.importer.import_dataset`/`_import_trip_patterns`
-  (Phase 1) for a NEW `service_date`, so an admin can regenerate a single
-  route's day without re-touching the other 25 routes or re-running the whole
-  import script. Three functions:
-  - `find_import_route(dataset, route, agency_name)` — matches an existing DB
-    `Route` row to the dataset's `ImportRoute` entry by `(agency name,
-    short_name)`, the EXACT SAME identity `seeding.importer._get_or_create_route`
-    already uses during import. Returns `None` if the route isn't in the
-    dataset at all (e.g. created via the generic `/admin/import` endpoint with
-    non-canonical data).
-  - `dataset_for_route(dataset, route_ref)` — slices a full `ImportDataset`
-    down to exactly one route's agency/stops/route/route_stops/trip_patterns/
-    trip_stop_times, so the returned `ImportReport` is about that one route,
-    not a "26 routes matched" no-op report on every call.
-  - `generate_daily_trips(session, route, agency_name, service_date, *,
-    dataset=None)` — orchestrates the two above, then calls
-    `import_dataset(session, scoped_dataset, allow_routes_without_stops=True,
-    service_date=service_date)`. Raises `NoCanonicalTripPattern` (defined in
-    this module) if the route has no matching `ImportTripPattern` - see "Never
-    fabricates" below. `dataset` defaults to loading the real
-    `docs/transit_data.json` (`DEFAULT_TRANSIT_DATA_PATH`) when not given;
-    tests pass a small synthetic one instead so most of them don't depend on
-    the real file's specific numbers.
-- `tests/test_trip_generation.py` — 15 tests: pure dataset-slicing logic (6),
-  `generate_daily_trips` against a synthetic dataset + real DB (5: correct
-  count/offsets, idempotency, distinct-service-dates non-collision, two
-  distinct "no pattern" failure modes), and HTTP-level tests against a bare
-  admin-only test app (4: 404 for a nonexistent route, 404 for a real route
-  with no pattern [Red Line, via the REAL dataset], 422 for a malformed
-  request, and - the plan's own literal acceptance check - generating FR-04's
-  real canonical pattern and asserting `trips_created == 97`, plus an
-  HTTP-level idempotency check on FR-01).
-
-### Modified files
-- `api/admin/schemas.py` — added `TripGenerationRequest` (`route_id`,
-  `service_date`), `TripGenerationResponse` (route id/short_name/service_date
-  plus `trips_created`/`trips_replaced`/`stop_times_created` - a scoped-down
-  `ImportReport`, not the full one), `TripGenerationRejectedResponse` (404
-  body shape).
-- `api/admin/router.py` — added `POST /trips/generate`. Looks up the `Route`
-  by id (404 if missing), fetches its agency's name with a plain `select`
-  (NOT `route.agency` - a lazy relationship this async session won't
-  implicitly resolve), calls `seeding.trip_generator.generate_daily_trips`,
-  maps `NoCanonicalTripPattern` -> 404 and `ImportValidationError` -> 422.
-  Module docstring's one-line summary updated to mention this endpoint.
-  **Did NOT touch `api/router.py`** - unlike Phase 4 (which had to, to mount
-  a brand-new router), this endpoint is just one more route on the ALREADY-
-  mounted `admin_router` object (see `api/router.py`'s existing
-  `api_router.include_router(admin_router, dependencies=[Depends(require_role(
-  ROLE_ADMIN))])`), so it inherits admin-only gating automatically with zero
-  changes to the aggregator - confirmed live (see below), not assumed.
-
-## Design decisions worth flagging for the next agent
-
-1. **"Verify correct count (97)" in plan.md's Phase 5 test spec is NOT a stale
-   placeholder** - I checked `docs/transit_data.json` directly before assuming
-   otherwise (the Phase 1 M-section's "97 stops"/"28 routes" wording IS stale,
-   left over from an early draft before the real dataset grew to 122 stops/26
-   routes - but FR-04's `total_trips_per_day` really is 97 in the actual file
-   today). `tests/test_trip_generation.py::test_generate_trips_endpoint_fr04_
-   matches_real_canonical_pattern_count` asserts this against the live file
-   rather than hardcoding it blind, so it fails loudly if that ever changes.
-2. **Never falls back to `simulation.trip_builder.build_trip_for_route`** for
-   a route with no canonical pattern. That function (Phase 3/4's demo-trip
-   path, still used unchanged by `control_router.py`) generates a
-   SIMULATED/speed-derived schedule and is exactly the kind of thing the task
-   brief says to keep "clearly distinguished" from real transit data - Phase 5
-   returns 404 instead of silently blending the two. Confirmed which routes
-   this actually affects by inspecting the real file: only FR-01, FR-04,
-   FR-07, FR-14 have a `trips[]` entry; every other route (including Red Line,
-   which HAS real stops/route_stops, just no researched timetable) gets 404.
-3. **`generate_daily_trips`'s `dataset` parameter, not a hardcoded internal
-   load.** Defaults to the real file so the endpoint's actual behavior needs
-   no test-only code path, but every unit-level test passes a tiny synthetic
-   dataset instead (only 4 tests touch the real 122-stop/275-trip file, and
-   only because they specifically need to). Keeps most of the suite fast and
-   decoupled from the real dataset's specific numbers changing later.
-4. **Route resolution is `(agency name, short_name)`, not the dataset's
-   internal `ref`.** `Route` (the DB model) has no `ref` column (unlike
-   `Stop`) - only `Stop` needed one, to disambiguate same-named stops (Phase 1
-   handoff). Routes don't have that name-collision problem in the current
-   dataset, so matching on the same `(agency_id, short_name)` uniqueness
-   `seeding.importer._get_or_create_route` already relies on was the more
-   consistent choice over inventing a new `Route.ref` column Phase 5 doesn't
-   otherwise need.
-5. **`api/admin/router.py`'s own module docstring still says "NOT registered
-   on the main application"** - that's now false (see `api/router.py`:
-   `admin_router` IS mounted, gated by `require_role(ROLE_ADMIN)`), but this
-   predates Phase 5 and isn't this phase's file to fix per the task's "Phase 5
-   only" scope - flagging it as a pre-existing stale comment I noticed but
-   left alone, not something Phase 5 introduced or is responsible for.
-
-## What was verified, and how
-
-- **Full suite, twice consecutively**: 515 passed, 0 failed, 0 skipped both
-  times (~71s each). DB confirmed empty (0 rows in `stops`/`trips`/`agencies`)
-  after each run - every new test uses the same rolled-back SAVEPOINT
-  `db_session` fixture as the rest of the suite; nothing persists.
-- **`alembic upgrade head`**: no-op, still exactly one head (`d4e5f6a7b8c9`) -
-  confirms Phase 5 genuinely added no migration.
-- **Real import + live spot-check against a real `uvicorn` process** (not
-  Docker - this sandbox has none - but a genuinely separate OS process bound
-  to a real socket, reached via `curl`, not `pytest`'s `ASGITransport`):
-  1. `alembic upgrade head` + `scripts/import_transit_data.py --service-date
-     2026-09-01`: 2 agencies, 122 stops, 26 routes, 115 route_stops, 275
-     trips, 6242 stop_times - identical to every prior phase's verified
-     baseline.
-  2. Started `uvicorn main:app` for real; `GET /api/dev/status` confirmed the
-     live data and a loaded routing graph (17 nodes/6 ride/2 walk edges - the
-     same numbers every prior phase's live check has reported).
-  3. Called `POST /api/admin/trips/generate` for FR-04 with NO auth header:
-     got a real `401 Could not validate credentials` - confirmed the new
-     endpoint really does inherit `admin_router`'s existing auth gate over
-     real HTTP, not just in a test's dependency-override setup.
-  4. Registered a real user via `POST /api/auth/register`, promoted it to
-     `role='admin'` directly in Postgres (`get_current_active_user` re-reads
-     the user's role from the DB on every request - no need to re-mint a
-     token), then called the same endpoint with a real `Authorization: Bearer`
-     header for FR-04, `service_date=2026-09-15`:
-     **`200 OK`, `{"trips_created": 97, "trips_replaced": 0,
-     "stop_times_created": 2425}`** (2425 = 97 × 25 stops/trip, FR-04's real
-     stop count) - matching the plan's own acceptance number exactly, and
-     confirmed independently against the database directly
-     (`SELECT COUNT(*) FROM trips WHERE route_id = ... AND
-     scheduled_start_time::date = '2026-09-15'` -> `97`).
-  5. Called the SAME request again: `200 OK`,
-     `{"trips_created": 97, "trips_replaced": 97, ...}` - live confirmation of
-     idempotency (still 97 rows, not 194).
-  6. Called the same endpoint for Red Line (`short_name = "Red"`, a route
-     with real stops but no researched timetable):
-     **`404`**, `"Route 'Red' (agency 'Punjab Mass Transit Authority (PMTA)')
-     has no canonical trip pattern in the dataset - real timetable data
-     exists today only for FR-01, FR-04, FR-07, and FR-14..."` - confirmed
-     live that "no pattern" genuinely 404s rather than fabricating one.
-  7. Cleaned up: deleted the test admin user, truncated
-     `stop_times/trips/route_stops/routes/stops/agencies` back to 0 rows,
-     confirmed via direct query, then re-ran the full suite once more (515
-     passed again) as a final sanity check.
-
-## What could NOT be verified in this environment (for OpenCode)
-
-- **The real Docker Postgres/PostGIS environment specifically.** This
-  sandbox's Postgres is a manually-installed (non-Docker) instance - same
-  category of gap every prior authoring session in this file has had. No
-  specific reason to expect a difference (no new SQL constructs, no schema
-  change at all this phase - the entire risk surface is "does `import_dataset`
-  behave the same," which is Phase-1-tested code, unmodified here), but it is
-  unverified against that specific environment.
-- **A genuinely fresh admin JWT** reflecting the promoted role from creation
-  (this session promoted an EXISTING token's user via direct SQL, since
-  `get_current_active_user` re-checks the DB every request - convenient for
-  a quick sandbox check, but OpenCode's environment may prefer to verify via
-  whatever this project's normal "create an admin user" path is, if one
-  exists beyond direct SQL, for a more representative check).
-- **Windows-specific behavior** (line endings, path separators, etc.) - this
-  sandbox is Linux throughout, same as every prior authoring session.
-
-## What OpenCode should run to verify
-
-```
-# From an environment with Docker + a reachable Postgres/PostGIS:
-alembic upgrade head          # expect: no-op, still d4e5f6a7b8c9 (no new
-                               # migration this phase)
-pytest -q                     # expect: 515 passed, 0 failed, 0 skipped
-pytest tests/test_trip_generation.py -q   # expect: 15 passed, the Phase-5-
-                               # specific subset in isolation
-```
-
-Live HTTP spot-check (mirrors what this session already did, to confirm it
-reproduces against the real Docker environment):
-
-```
-python scripts/import_transit_data.py --service-date <any date>
-uvicorn main:app   # separate terminal/process
-# register a user via POST /api/auth/register, note the token
-# UPDATE users SET role='admin' WHERE email='<that user>'; in psql
-curl -X POST http://localhost:8000/api/admin/trips/generate \
-     -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-     -d '{"route_id": "<FR-04's route id>", "service_date": "2026-09-15"}'
-# expect: 200, trips_created=97, stop_times_created=2425
-# call it again with the same body -> expect trips_replaced=97 (not 194 trips in the DB)
-# try a route with no pattern (e.g. short_name "Red") -> expect 404
-```
-
-As always: clean transit tables (`stop_times, trips, route_stops, routes,
-stops, agencies` - TRUNCATE CASCADE, in that order) before running `pytest`
-again if the live check leaves committed data behind.
-
-## What Remains
-
-### Later phases (see §M, unchanged)
-- **Phase 6** Frontend integration readiness: finalize response schemas
-  (including route geometry in journey legs), CORS, documented shapes across
-  every endpoint. Not started.
-
-## Active Todo List (for next agent)
-- [x] Phase 1 import pipeline + migrations + tests (431 passed)
-- [x] Phase 2 geocoding service + script + provenance + tests + live run
-      (447 passed, 88/122 stops located)
-- [x] Phase 3 OSRM route geometry service + script + provenance columns + API
-      exposure + tests + live-verified against real Docker PostGIS + OSRM
-      (464 passed, 0 real routes eligible - correct, honest outcome)
-- [x] Phase 4 enhanced realtime API (bearing/speed/route+stop names/ETA/delay)
-      + optional Route.path polyline interpolation + tests, live-verified
-      against real Docker PostGIS + real uvicorn by OpenCode (500 passed)
-- [x] Phase 5 admin daily-trip generation endpoint (`seeding.trip_generator`
-      + `POST /admin/trips/generate`) + tests, live-verified against a real
-      (non-Docker) Postgres + real uvicorn + real admin auth in this session
-      (515 passed; FR-04 -> 97 trips confirmed live, matching the plan's own
-      acceptance number)
-- [x] Phase 5 follow-up: verified against the real Docker Postgres/PostGIS
-      environment + a real uvicorn process by OpenCode (515 passed / 0 failed
-      / 0 skipped; see the "Phase 5 VERIFIED" section below)
-- [ ] Phase 6: frontend API contract finalization + tests
-- [ ] Remember: clean transit tables before pytest after running any
-      import/enrichment script or live spot-check that commits
-
----
-
-# SESSION HANDOFF — Phase 5 VERIFIED (2026-08-18, verification agent / OpenCode)
-
-## Status: Phase 5 (Trip Generation Admin Endpoint) verified against a live
-## Docker PostgreSQL/PostGIS + a real uvicorn process. **515 tests pass, 0
-## failures, 0 skips** — identical to the authoring session's reported result,
-## now confirmed against the same Docker environment OpenCode used for
-## Phases 1–4.
-
-## Environment used for this verification
-
-- Windows 10 + Docker Desktop; `postgis/postgis:16-3.4` container started via
-  the repository's existing `backend/docker-compose.yml` (no new/foreign DB
-  setup). Python 3.13.3, `backend/.venv`, commands run from PowerShell.
-- DB was at the empty pytest baseline (all tables 0 rows, alembic at
-  `d4e5f6a7b8c9`) when verification started.
-
-## Test results
-
-- **Full suite** (`pytest -q`): **515 passed, 0 failed, 0 skipped** (~3.5 min),
-  run twice — once at the start and once after the live spot-check data was
-  cleaned up — both identical.
-- **Phase 5 subset** (`pytest tests/test_trip_generation.py -q`): **15 passed**
-  (6 pure dataset-slicing + 5 synthetic-dataset DB + 4 HTTP-level). All DB-
-  backed tests executed against the real Docker PostGIS (they carry a
-  `_database_reachable` guard that would have skipped them otherwise) — none
-  skipped.
-- **Phase 4 regression subset** (`pytest tests/test_engine_geometry_interpolation.py
-  tests/test_enhanced_realtime.py tests/test_simulation_engine.py -q`):
-  **59 passed** — Phase 4 is not broken by Phase 5.
-- No test was weakened, deleted, or skipped to make the suite pass — nothing
-  needed fixing. Code changes in this tree are Claude's Phase 5 implementation
-  plus this plan.md handoff.
-
-## Migration status
-
-- `alembic upgrade head` is clean/idempotent: a no-op on this DB (already at
-  `d4e5f6a7b8c9`).
-- Exactly **one** Alembic head: `d4e5f6a7b8c9` (Phase 3's route-geometry
-  provenance migration). Linear chain, no new migration for Phase 5 (correct —
-  plan.md section M says Phase 5 needs none).
-
-## Live HTTP spot-check (real uvicorn, real sockets, real admin auth)
-
-1. Imported the real canonical dataset (`scripts/import_transit_data.py
-   --service-date 2026-09-01`): 2 agencies, 122 stops, 26 routes, 115
-   route_stops, 275 trips, 6242 stop_times — identical to every prior phase.
-2. Started `uvicorn main:app` (real process, port 8000) against Docker PostGIS;
-   lifespan routing-graph build succeeded; `GET /health` 200.
-3. **Mounting confirmed two independent ways**: (a) `/api/admin/trips/generate`
-   is present in the assembled `main.app`'s OpenAPI schema (200/404/422) —
-   no test-only router setup involved; (b) it was reachable over real HTTP.
-4. **Authorization over real HTTP**:
-   - No auth header → `401 Could not validate credentials`.
-   - A freshly registered passenger user (via `POST /api/auth/register`) →
-     `403 You do not have permission to perform this action` (non-admin is
-     rejected, not just unauthenticated).
-   - After promoting that user to `role='admin'` directly in Postgres (the
-     project's established admin-provisioning path; `get_current_active_user`
-     re-reads the role from the DB every request) → `200 OK`.
-5. **FR-04 generation** (`service_date=2026-09-15`):
-   `{"trips_created": 97, "trips_replaced": 0, "stop_times_created": 2425}` —
-   the plan's own acceptance numbers. Confirmed in the DB independently:
-   `SELECT count(*) FROM trips WHERE route_id=... AND
-   scheduled_start_time::date='2026-09-15'` → **97**, and **2425** stop_times.
-   Generated StopTime offsets match `docs/transit_data.json`'s canonical FR-04
-   pattern **exactly** (arrivals `0,124,252,...,3335`; departures arrival+20s
-   dwell, terminus 3335/3335), and the first trip starts `06:00:00` PKT with
-   10-min headway (06:00/06:10/06:20). All generated trips are
-   `status='scheduled'`, `vehicle_id NULL`.
-6. **Idempotency**: calling the same request again returned
-   `{"trips_created": 97, "trips_replaced": 97, "stop_times_created": 2425}`;
-   the DB still holds exactly 97 trips / 2425 stop_times for that service date
-   (no duplication), and no duplicate `(trip_id, sequence)` StopTime rows
-   exist. A different service date (`2026-09-16`) generates a fresh 97/2425
-   alongside, without colliding with the 09-15 set.
-7. **No-canonical-pattern route (Red Line)**: `404` with the clear message
-   "Route 'Red' (agency 'Punjab Mass Transit Authority (PMTA)') has no
-   canonical trip pattern in the dataset - real timetable data exists today
-   only for FR-01, FR-04, FR-07, and FR-14...". Confirmed in the DB: **zero**
-   Trip rows and **zero** StopTime rows were created for the Red Line.
-8. **Nonexistent route id** → `404`.
-9. Everything was torn down: uvicorn stopped, all 11 tables (transit + users/
-   fares/tickets) truncated back to the empty pytest baseline, and the full
-   suite re-run green afterwards (515 passed again).
-
-## Implementation review (trip_generator.py) — task-brief compliance
-
-- **Reuses the Phase 1 importer**: `generate_daily_trips` slices the dataset
-  and hands it to `seeding.importer.import_dataset` → `_import_trip_patterns`
-  (deterministic `trip_id_for`/`stop_time_id_for`, replace-in-place). No
-  Trip/StopTime creation is reimplemented.
-- **Canonical source**: defaults to `DEFAULT_TRANSIT_DATA_PATH` =
-  `docs/transit_data.json` via `seeding.transit_data_importer.load_transit_data`.
-- **Only canonical routes get trips**: the 4-researched-route check (FR-01/04/
-  07/14) is data-driven — `NoCanonicalTripPattern` is raised (→ HTTP 404) for
-  any route with no pattern; there is no headway/speed guess and no fallback
-  to `simulation.trip_builder.build_trip_for_route`. Red Line (which has real
-  stops but no researched timetable) received zero fabricated rows.
-- **Correct association**: generated trips carry the right `route_id`,
-  `scheduled_start_time` on the requested service date in PKT, ordered
-  `StopTime` rows in sequence with offsets copied verbatim from the canonical
-  pattern.
-
-## Note: stale module docstring (not fixed, by design)
-
-`api/admin/router.py`'s module docstring still says "NOT registered on the
-main application" (lines 6–15), which has been false since the routers were
-integrated — the aggregator `api/router.py` mounts `admin_router` gated by
-`require_role(ROLE_ADMIN)`. This predates Phase 5 (Claude flagged it, left it
-for the same reason), it does not affect correctness, and the verification
-brief explicitly scoped out unrelated cleanup — so it is left as-is and noted
-here. A one-paragraph docstring fix is safe for any future agent to make.
-
-## What remains
-
-- **Phase 6** Frontend integration readiness: finalize response schemas
-  (including route geometry in journey legs), CORS, documented shapes across
-  every endpoint. Not started. **Phase 5 has no blockers — Phase 6 can begin.**
-
----
-
-# SESSION HANDOFF — Phase 6 COMPLETE (2026-08-18, agent handoff)
-
-## Status: Phase 6 (Frontend Integration Readiness) is implemented and passing
-## in a sandbox with a real (non-Docker) PostgreSQL/PostGIS AND a real
-## `uvicorn` process reached over real HTTP. **Not yet verified against the
-## actual Docker Postgres/PostGIS environment** OpenCode used for Phases 1-5 -
-## same category of gap every authoring session in this file has flagged.
-## **This agent did NOT commit anything** - working tree changes only, per the
-## verification brief; OpenCode commits after its own independent check.
-
-**Test baseline this session: 532 passed, 0 failed, 0 skipped** (515 Phase-5-
-verified baseline + 17 new Phase 6 tests), run three times consecutively for
-stability (identical every time). DB confirmed empty (0 rows) after every run.
-
-## What Is Done (Phase 6)
-
-**Database changes: none** (plan.md section M says Phase 6 needs none -
-confirmed: `alembic upgrade head` was already a no-op at `d4e5f6a7b8c9` before
-any Phase 6 work, and still is after it).
-
-### What Phase 6 actually needed to add (most of section H was already done)
-
-Before writing any code, I read `plan.md` section H (the Map/Frontend
-Contract) item by item against the CURRENT implementation, per the task's
-instruction to "identify exactly which Phase 6 requirements are already
-partially supported." Result: **6 of section H's 7 items were already fully
-implemented** by Phases 1-5 (agencies/routes/route-detail/geometry/stops list
-with nearby-search - Phase 3; realtime vehicles/ETA - Phase 4). The two
-genuine gaps were:
-
-1. **Ride legs had no `route_geometry` field** (section H item 6) - the one
-   change plan.md's Phase 6 file list explicitly names.
-2. **No CORS middleware existed AT ALL** in `main.py` - not partially done,
-   not misconfigured, simply absent. Since Phase 6's own test spec says
-   "verify CORS headers," and there was nothing to verify, this was an
-   unavoidable Phase 6 addition even though `main.py` isn't in the phase's
-   literal "files to create/modify" list - flagged as a judgment call below
-   (task instruction 6: inspect prior phases/docs before deciding on a
-   genuine ambiguity).
-
-Everything else this phase touched is either these two additions or tests/
-docs describing them - no other backend behavior changed.
-
-### Modified files
-- **`api/transit/journey_schemas.py`** - `RideLegRead` gained
-  `route_geometry: RouteGeometryRead` (imported from `api/transit/schemas.py`,
-  not duplicated - same type `GET /transit/routes/{id}/geometry` already
-  returns). Docstring explains it's the route's FULL polyline, not a
-  sub-path cropped to the ridden segment - matching
-  `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` section B's own pre-existing
-  recommendation ("the frontend can slice that route's own polyline...
-  rather than the backend needing to compute and return a sub-polyline
-  itself"), which I read before implementing per instruction 6.
-- **`api/transit/journeys.py`** - `_fetch_routes_by_id` now ALSO selects each
-  route's geometry GeoJSON in the same batched query (still exactly one query,
-  no N+1), reusing `api.transit.router._route_geometry_json_expr`/
-  `_route_geometry_read` (imported across modules rather than duplicating the
-  `ST_AsGeoJSON`-extraction-and-null-handling logic a second time - reuse
-  requirement 4). `_ride_leg_to_schema` populates the new field. No other
-  function in this file changed.
-- **`main.py`** - added `CORSMiddleware`. `allow_origins=["*"]`,
-  `allow_credentials=False` (deliberately paired - Starlette's
-  `CORSMiddleware` refuses `allow_credentials=True` with a wildcard origin
-  outright, and nothing in this API relies on cookie-based CORS anyway: the
-  only credentialed flows use an `Authorization: Bearer <token>` header, per
-  `api/auth/router.py`, which `allow_headers=["*"]` already lets through
-  regardless of `allow_credentials`). Justified in a code comment: every
-  endpoint a browser map client needs (static transit network, journey
-  search, realtime positions/ETAs) is already public with no auth - only
-  `/admin/*` is gated, and that's not a browser-map frontend's concern.
-  Module docstring's one-line summary updated ("...the routing graph's
-  startup lifecycle" -> "...CORS, and the routing graph's startup
-  lifecycle").
-- **`docs/MAP_AND_REALTIME_RECOMMENDATIONS.md`** - the pre-existing
-  "Journeys" bullet (section B) updated from a forward-looking recommendation
-  to **IMPLEMENTED as of Phase 6**, describing exactly what `route_geometry`
-  is and isn't (full route polyline, not a sub-path; null, not fabricated,
-  when the route has no geometry yet). This is the one documentation change
-  Phase 6 actually made - per instruction, no other doc was touched, since
-  nothing else Phase 6 did changed a previously-documented implementation
-  status.
-
-### New file
-- **`tests/test_frontend_contract.py`** - 17 tests, in five groups:
-  1. **Response-shape validation** (section H items 1/3/5) for
-     `/transit/agencies`, `/transit/routes`, `/transit/routes/{id}`
-     (both WITH and WITHOUT geometry - two separate seeded routes, so both
-     the populated and the honest-null cases are exercised),
-     `/transit/routes/{id}/geometry`, `/transit/stops` (plain and
-     nearby-search-with-`distance_m`), `/transit/realtime/vehicles` (list AND
-     single-vehicle detail AND per-route), and
-     `/transit/realtime/vehicles/{id}/eta` - each asserts the documented key
-     set is a SUBSET of the actual response (never exact/exhaustive
-     equality), so this test suite doesn't accidentally forbid a future
-     phase from adding more fields.
-  2. **`route_geometry` on ride legs** (section H item 6, the Phase 6
-     API change) - one test with a route that has geometry (asserts
-     `type: "LineString"`, correct GeoJSON `[lon, lat]` order, correct
-     vertex count - the FULL route's geometry, not a crop), one test with a
-     route that doesn't (asserts explicit `null`, not a missing key).
-  3. **CORS** - one test for headers on a simple `GET`, one for a full
-     `OPTIONS` preflight (`Access-Control-Request-Method`/`-Headers`),
-     both asserting `access-control-allow-origin: *` is actually present.
-  4. **No-authentication-required** - every endpoint section H documents
-     as public is called with NO `Authorization` header anywhere in this
-     file, asserting none of them ever returns 401/403.
-  5. **Regression guard** - `/admin/trips/generate` still returns 401
-     with no auth header, specifically to catch Phase 6 accidentally
-     loosening the public/admin boundary while making other things public.
-
-  Fixture pattern mirrors `test_journey_api.py`/`test_enhanced_realtime.py`
-  exactly (real `main.app`, rolled-back SAVEPOINT `db_session`,
-  `get_session`/`get_transit_graph`/`get_vehicle_location_provider` all
-  overridden to the same session) - no new test infrastructure invented.
-
-## A real bug I hit and fixed - in my OWN test, not in production code
-
-Building `routing.graph.TransitGraph` twice against the same `AsyncSession`
-after mutating relationships in between (one test needed a second route's
-`RouteStop`s added mid-test, then a graph rebuild to pick them up) hit a
-genuine SQLAlchemy identity-map staleness issue: the second `build_graph`
-call's `selectinload(Route.route_stops)` silently returned the FIRST call's
-cached (empty) collection instead of re-querying, because the ORM object
-was already in the session's identity map with that relationship marked
-loaded. Fixed with a precisely-scoped `session.expire(route, ["route_stops"])`
-right before the second build (NOT `expire_all()` - tried that first, it
-broke a DIFFERENT already-loaded relationship, `route.agency`, by forcing a
-lazy-load attempt outside an async greenlet context, i.e.
-`MissingGreenlet`). This is purely a test-authoring artifact of rebuilding
-the graph twice mid-test - a real request builds the graph at most once per
-session, so **no production code (`routing.graph.build_graph` or anything
-else) needed a change for this**, and none was made.
-
-## Design decisions worth flagging for the next agent
-
-1. **CORS in `main.py` is a scope judgment call, not a literal
-   file-list match** - see "What Phase 6 actually needed to add" above.
-   I inspected `api/router.py`'s existing auth gating before deciding
-   `allow_credentials=False` + `allow_origins=["*"]` was safe (no
-   cookie-based flow exists anywhere in this codebase to leak cross-origin
-   credentials for) rather than guessing.
-2. **ETA field names were NOT renamed to match section H's literal
-   pseudo-JSON** (`scheduled`/`estimated`/`delay` there vs. the ALREADY-
-   SHIPPED, ALREADY-VERIFIED `scheduled_arrival`/`estimated_arrival`/
-   `delay_seconds` in `ETARead`, Phase 4). Per instruction 6 (inspect prior
-   phases before a judgment call): Phase 4's field names were built,
-   tested, AND live-verified against Docker+HTTP by OpenCode - section H's
-   shorthand reads as documentation-level abbreviation (the same pattern as
-   Phase 1's stale "97 stops" placeholder I found in Phase 5, and Phase 5's
-   own literal "97" trip count I confirmed was real, not stale) rather than
-   a literal contract OpenCode's verification depended on. Renaming
-   would violate instruction 5 ("do not weaken/delete/skip existing
-   tests") by breaking `tests/test_enhanced_realtime.py`'s and
-   `tests/test_realtime_api.py`'s existing assertions for no benefit.
-   `tests/test_frontend_contract.py` asserts the REAL (already-verified)
-   field names.
-3. **Realtime/static schemas were NOT otherwise modified** -
-   `api/transit/schemas.py` and `api/transit/realtime/schemas.py` are both
-   on Phase 6's file list ("finalize... schemas"), but line-by-line
-   comparison against section H found every field already present and
-   correctly typed (Phases 3/4). "Finalize" was read as "confirm and
-   contract-test," not "must contain a diff" - consistent with instruction
-   2 (do not redesign existing architecture unless explicitly required)
-   and instruction 5.
-4. **No walk-leg geometry field was added.** Section H's example JSON shows
-   `route_geometry` only on the `ride` leg shape, not the `walk` one; the
-   pre-existing `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` recommendation
-   for walk legs was "a walk leg's own straight-line... path," which
-   `WalkLegRead`'s existing `from_location`/`to_location`/`distance_m` pair
-   already lets a client draw directly - adding a redundant GeoJSON
-   LineString for two points would be scope creep past what section H
-   actually specifies.
-
-## What was verified, and how
-
-- **Full suite, three times consecutively**: 532 passed, 0 failed, 0 skipped
-  every time (~75s each). DB confirmed empty after each run.
-- **`alembic upgrade head`**: no-op, still exactly one head (`d4e5f6a7b8c9`) -
-  confirms Phase 6 genuinely added no migration.
-- **App wiring smoke check**: imported `main.app` and generated its OpenAPI
-  schema directly (no server needed) - all 41 paths present, including the
-  already-existing `/api/transit/journeys/search`; confirms the
-  `journey_schemas.py`/`journeys.py` changes don't break app assembly.
-- **Live HTTP spot-check against a real `uvicorn` process** (not Docker -
-  this sandbox has none - but a genuinely separate OS process bound to a
-  real socket, reached via `curl`, not `pytest`'s `ASGITransport`):
-  1. `GET /` -> 200, confirms the app boots with the new CORS middleware
-     installed (a misconfigured middleware argument would have raised at
-     construction time, before any request).
-  2. `OPTIONS /api/transit/journeys/search` with
-     `Access-Control-Request-Method: POST` -> real `200` with
-     `access-control-allow-origin: *`,
-     `access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT`,
-     `access-control-allow-headers: content-type` - a genuine CORS
-     preflight response, not a test-only shortcut.
-  3. `GET /api/transit/agencies` with an `Origin` header -> real `200` with
-     `access-control-allow-origin: *` on a simple (non-preflighted) request
-     too.
-  4. Imported the real canonical dataset
-     (`scripts/import_transit_data.py --service-date 2026-09-01`): 2
-     agencies, 122 stops, 26 routes, 115 route_stops, 275 trips, 6242
-     stop_times - identical to every prior phase's verified baseline.
-  5. **Live journey search through real data, checking `route_geometry`
-     specifically**: queried the DB directly for a real, currently-located
-     consecutive stop pair (Red Line: Saddar -> Marrir Chowk -> Liaquat
-     Bagh - all three have real coordinates), then called
-     `POST /api/transit/journeys/search` with those exact coordinates as
-     origin/destination over real HTTP. Got a real `200` with a one-ride
-     journey on the real "Red" route/"Punjab Mass Transit Authority (PMTA)"
-     agency, `board_stop`/`alight_stop`/`intermediate_stops` all correct,
-     and **`route_geometry: {"type": null, "coordinates": null,
-     "geometry_source": null, "geometry_confidence": null}`** - confirming
-     live, against real data, that the new field appears and is honestly
-     null (Red Line has no generated geometry - consistent with every
-     prior phase's "0 real routes have geometry" finding) rather than
-     fabricated or omitted.
-  6. Everything was torn down: uvicorn stopped, all transit tables
-     truncated back to the empty pytest baseline (confirmed via direct
-     query: 0 stops, 0 trips), and the full suite re-run green afterward
-     (532 passed again).
-
-## What could NOT be verified in this environment (for OpenCode)
-
-- **The real Docker Postgres/PostGIS environment specifically.** Same
-  category of gap every prior authoring session in this file has had. No
-  specific reason to expect a difference (no schema change at all this
-  phase - the only risk surface is the CORS middleware config and the
-  `route_geometry` query join, both plain SQLAlchemy/Starlette behavior with
-  no PostGIS-version sensitivity), but genuinely unverified against that
-  specific environment.
-- **A real browser's CORS enforcement.** `curl`/`httpx` don't enforce CORS
-  themselves (only browsers do, client-side) - what was verified is that the
-  SERVER sends the correct headers for a browser to act on; an actual
-  cross-origin `fetch()` from a real web page was not exercised (no browser
-  available in this sandbox).
-- **Windows-specific behavior.**
-
-## What OpenCode should run to verify
-
-```
-# From an environment with Docker + a reachable Postgres/PostGIS:
-alembic upgrade head          # expect: no-op, still d4e5f6a7b8c9 (no new
-                               # migration this phase)
-pytest -q                     # expect: 532 passed, 0 failed, 0 skipped
-pytest tests/test_frontend_contract.py -q   # expect: 17 passed, the
-                               # Phase-6-specific subset in isolation
-```
-
-Live HTTP spot-check (mirrors what this session already did):
-
-```
-python scripts/import_transit_data.py --service-date <any date>
-uvicorn main:app   # separate terminal/process
-curl -i -X OPTIONS http://localhost:8000/api/transit/journeys/search \
-     -H "Origin: https://example.test" -H "Access-Control-Request-Method: POST"
-# expect: 200, access-control-allow-origin: *
-
-# Find a real located consecutive stop pair (e.g. via psql: join routes/
-# route_stops/stops where stops.location IS NOT NULL, ordered by sequence),
-# then:
-curl -X POST http://localhost:8000/api/transit/journeys/search \
-     -H "Content-Type: application/json" \
-     -d '{"origin": {...}, "destination": {...}, "objective": "fastest", "max_walk_m": 500}'
-# expect: 200, a "ride" leg containing "route_geometry": {"type": null, "coordinates": null, ...}
-#  (or a real LineString, IF this environment has by then run Phase 3's
-#  geocoding/geometry scripts far enough to locate a full route's stops -
-#  not the case in any environment so far)
-```
-
-As always: clean transit tables (`stop_times, trips, route_stops, routes,
-stops, agencies` - TRUNCATE CASCADE, in that order) before running `pytest`
-again if the live check leaves committed data behind.
-
-## What must NOT be changed by the verification agent
-
-- **`tests/test_realtime_api.py`, `tests/test_enhanced_realtime.py`'s ETA
-  field-name assertions** (`scheduled_arrival`/`estimated_arrival`/
-  `delay_seconds`) - see design decision #2 above. Renaming these to match
-  section H's shorthand would be a real, breaking API change to an
-  already-shipped, already-Docker-verified contract, not a fix.
-- **`api/admin/router.py`'s stale "NOT registered on the main application"
-  docstring** - predates Phase 5, not touched by Phase 6 either, still not
-  this task's concern (see the Phase 5 VERIFIED handoff's note on this).
-- **The dangling leftover sentence fragment** immediately after the
-  "Routes" bullet in `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md` section B
-  ("(§A.2), it should be exposed as a GeoJSON `LineString`...") - this
-  predates Phase 6 (an artifact of an earlier phase's doc edit), is
-  unrelated to anything Phase 6 changed, and fixing unrelated pre-existing
-  issues is out of scope per this task's own instructions.
-
-## What Remains
-
-Per plan.md section M, Phase 6 was the last phase explicitly specified in
-this document. No Phase 7 is defined here - any further work is a new scope
-to be specified separately, not something to infer or start unprompted.
-
-## Active Todo List (for next agent)
-- [x] Phase 1 import pipeline + migrations + tests (431 passed)
-- [x] Phase 2 geocoding service + script + provenance + tests + live run
-      (447 passed, 88/122 stops located)
-- [x] Phase 3 OSRM route geometry service + script + provenance columns + API
-      exposure + tests + live-verified against real Docker PostGIS + OSRM
-      (464 passed, 0 real routes eligible - correct, honest outcome)
-- [x] Phase 4 enhanced realtime API (bearing/speed/route+stop names/ETA/delay)
-      + optional Route.path polyline interpolation + tests, live-verified
-      against real Docker PostGIS + real uvicorn by OpenCode (500 passed)
-- [x] Phase 5 admin daily-trip generation endpoint + tests, live-verified
-      against real Docker PostGIS + real uvicorn + real admin auth by
-      OpenCode (515 passed; FR-04 -> 97 trips confirmed live)
-- [x] Phase 6 frontend integration readiness: `route_geometry` on journey
-      ride legs + CORS middleware (previously entirely absent) + frontend
-      contract test suite, live-verified in this sandbox (non-Docker
-      Postgres + real uvicorn + real HTTP, including a real journey search
-      against real imported data showing the new field honestly null)
-      (532 passed; NOT yet verified against Docker)
-- [x] Phase 6 follow-up: verified the same 532 tests (specifically the 17 new
-      ones) against the real Docker Postgres/PostGIS environment, plus the
-      live HTTP/CORS spot-checks reproduced there (see the "Phase 6 VERIFIED"
-      section below)
-- [x] Remember: clean transit tables before pytest after running any
-      import/enrichment script or live spot-check that commits
-
----
-
-# SESSION HANDOFF — Phase 6 VERIFIED (2026-08-19, verification agent / OpenCode)
-
-## Status: Phase 6 (Frontend Integration Readiness) verified against a live
-## Docker PostgreSQL/PostGIS + a real uvicorn process. **532 tests pass, 0
-## failures, 0 skips** — identical to the authoring session's reported result,
-## now confirmed against the same Docker environment OpenCode used for
-## Phases 1–5. This is the FINAL phase in plan.md section M; no Phase 7
-## exists and none was started.
-
-## Environment used for this verification
-
-- Windows 10 + Docker Desktop; `postgis/postgis:16-3.4` container started via
-  the repository's existing `backend/docker-compose.yml` (no new/foreign DB
-  setup, no direct PostgreSQL install on Windows). Python 3.13.3,
-  `backend/.venv`, commands run from PowerShell.
-- DB was at the empty pytest baseline (all tables 0 rows, alembic at
-  `d4e5f6a7b8c9`) when verification started.
-
-## Test results
-
-- **Full suite** (`pytest -q`): **532 passed, 0 failed, 0 skipped** (~3.5 min),
-  run twice — once at the start and once after the live spot-check data was
-  cleaned up — both identical. No test was weakened, deleted, or skipped.
-- **Phase 6 subset** (`pytest tests/test_frontend_contract.py -q`):
-  **17 passed** (all executed against the real Docker PostGIS — none skipped).
-- **Phase 4 regression subset** (`pytest tests/test_engine_geometry_interpolation.py
-  tests/test_enhanced_realtime.py tests/test_simulation_engine.py -q`):
-  **59 passed**.
-- **Phase 5 regression subset** (`pytest tests/test_trip_generation.py -q`):
-  **15 passed**.
-- **ETA/realtime subset** (`pytest tests/test_realtime_api.py
-  tests/test_enhanced_realtime.py -q`): **27 passed** — the established
-  `scheduled_arrival`/`estimated_arrival`/`delay_seconds` field names are
-  untouched.
-
-## Migration status
-
-- `alembic upgrade head` is clean/idempotent: a no-op on this DB (already at
-  `d4e5f6a7b8c9`).
-- Exactly **one** Alembic head: `d4e5f6a7b8c9` (Phase 3's route-geometry
-  provenance migration). Linear chain, no new migration for Phase 6 (correct —
-  plan.md section M says Phase 6 needs none). No migration files were added.
-
-## Live HTTP spot-check (real uvicorn, real sockets, Docker PostGIS)
-
-1. Imported the real canonical dataset (`scripts/import_transit_data.py
-   --service-date 2026-09-01`): 2 agencies, 122 stops, 26 routes, 115
-   route_stops, 275 trips, 6242 stop_times — identical to every prior phase.
-   Confirmed directly in PostGIS: **0 of 26 routes have geometry** (all
-   `path`/`geometry_source` NULL) and 17 of 122 stops have coordinates — the
-   "no real route has geometry" precondition the authoring handoff relies on
-   still holds.
-2. Started `uvicorn main:app` (real process, port 8000) against Docker PostGIS;
-   lifespan routing-graph build succeeded; `GET /health` 200.
-3. **Journey search — honest NULL geometry over real HTTP**: called
-   `POST /api/transit/journeys/search` for the real Red Line's located
-   consecutive pair Saddar → Marrir Chowk. Got a real 200 with a one-ride
-   journey on route "Red", and the ride leg carries
-   `"route_geometry": {"type": null, "coordinates": null,
-   "geometry_source": null, "geometry_confidence": null}` — the field is
-   present and honestly null for a route with no generated geometry (matching
-   the authoring handoff's own live finding), never fabricated or omitted.
-4. **Journey search — populated GeoJSON + full-route semantics over real
-   HTTP**: built a throwaway two-stop route `P6-CHK` from two real located
-   stops (Ammar Chowk, Bank Road — the same pattern Phases 3/4 used for their
-   throwaway routes), assigned it a **synthetic** 3-vertex `Route.path`
-   LINESTRING directly in PostGIS (a test-path proof, not real transit
-   geometry; the route was deleted afterward), restarted uvicorn so the
-   startup graph rebuild picked the route up, and searched Ammar Chowk →
-   Bank Road. The ride leg returned `"type": "LineString"` with **all 3
-   vertices** of the route's full polyline (`[[73.051,33.635],[73.05,33.639],
-   [73.046,33.644]]`, GeoJSON `[lon, lat]` order), `geometry_source: "OSRM"`,
-   `geometry_confidence: "OSM-DERIVED"` — proving the FULL route polyline is
-   exposed, not a sub-path cropped to the boarded→alighted segment, and that
-   the `ST_AsGeoJSON` extraction wired through `api.transit.router`'s
-   `_route_geometry_json_expr`/`_route_geometry_read` (reused, not
-   duplicated) works end-to-end over real HTTP.
-5. **Realtime endpoints over real HTTP**: started a demo trip on `P6-CHK`
-   via `POST /api/transit/realtime/simulation/routes/{id}/demo-trip`;
-   `GET /api/transit/realtime/vehicles`, `GET /api/transit/realtime/vehicles
-   /{id}`, and `GET /api/transit/realtime/vehicles/{id}/eta` all returned 200
-   with `route_short_name`, `bearing`, `speed_kmh`, `current_stop_name`/
-   `next_stop_name`, `scheduled_arrival_next_stop ==
-   estimated_arrival_next_stop`, and `delay_seconds: 0.0` — the established
-   Phase 4 field names intact over real HTTP.
-6. **CORS over real HTTP**: (a) `GET /api/transit/agencies` with an `Origin`
-   header → 200 with `access-control-allow-origin: *` (simple request);
-   (b) `OPTIONS /api/transit/journeys/search` with
-   `Access-Control-Request-Method: POST` → 200 with
-   `access-control-allow-origin: *`, `access-control-allow-methods:
-   DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT`, and
-   `access-control-allow-headers: content-type`. No
-   `access-control-allow-credentials` header on either — the intended
-   `allow_origins=["*"]` + `allow_credentials=False` pairing, unchanged.
-7. **Authentication NOT weakened by CORS**: `POST /api/admin/trips/generate`
-   with no auth header → **401** `{"detail":"Could not validate credentials"}`
-   — with AND without an `Origin` header. CORS adds response headers only; it
-   does not bypass auth. Public transit endpoints stay 200 with no auth.
-8. Everything was torn down: uvicorn stopped, throwaway route/vehicle/trip
-   removed, all 11 tables (transit + users/fares/tickets) truncated back to
-   the empty pytest baseline (confirmed via direct query: 0 rows everywhere),
-   and the full suite re-run green afterwards (532 passed again).
-
-## Implementation review (Phase 6 diff) — task-brief compliance
-
-- **Diff scope is exactly what the handoff claims**: 4 modified files
-  (`api/transit/journey_schemas.py`, `api/transit/journeys.py`, `main.py`,
-  `docs/MAP_AND_REALTIME_RECOMMENDATIONS.md`) + 1 new test file
-  (`tests/test_frontend_contract.py`) + the plan.md handoff. No other file
-  was touched — no test file was modified, no migration was added, no
-  dependency was introduced.
-- **`route_geometry` reuses Phase 3 logic**: `journeys.py` imports and reuses
-  `api.transit.router`'s `_route_geometry_json_expr`/`_route_geometry_read`
-  (the exact same `ST_AsGeoJSON` extraction and null-handling
-  `GET /transit/routes/{id}` uses) rather than duplicating a second
-  implementation. `RideLegRead.route_geometry` is the same
-  `RouteGeometryRead` type, not a new schema.
-- **No fabrication**: real routes still have NULL geometry (0/26, confirmed
-  directly in PostGIS); the API returns explicit `null` for them. The only
-  geometry present during verification was a synthetic test-path on a
-  throwaway route, deleted afterward. No canonical transit data, timetables,
-  or docs/transit_data.json were modified.
-- **ETA contract preserved**: no field was renamed; the section H shorthand
-  (`scheduled`/`estimated`/`delay`) was correctly read as documentation
-  abbreviation, not a contract change.
-- **CORS configuration as intended**: `allow_origins=["*"]`,
-  `allow_credentials=False` — verified over real HTTP, not changed.
-- **Auth boundary intact**: `/admin/*` still requires a role; an unauthenticated
-  request returns 401 with or without an `Origin` header.
-
-## What remains / NOT verified
-
-- **Browser-level CORS enforcement was NOT tested** — no browser was available;
-  what was verified is that the server sends the correct headers over real HTTP.
-  The authoring handoff already flags this as unverified; it remains so.
-- **No real route has geometry yet** (0/26, confirmed again) — so a "real route
-  with real OSRM geometry in a journey response" can only be demonstrated via a
-  synthetic path, as done above. Real geometry will appear only when Phase 2/3's
-  geocoding/geometry scripts are run far enough to locate a full route's stops.
-- Per plan.md section M, Phase 6 was the final phase; **no further implementation
-  work was started.** The repository is ready for a post-plan architecture/product
-  review.
-
----
-
-### What Already Exists and Can Be Reused (Everything)
-
-
-| Subsystem | Status | Reuse? |
-|-----------|--------|--------|
-| **Static transit models** (Agency, Route, Stop, RouteStop) | Complete, PostGIS-aware | YES — extend, don't replace |
-| **Realtime models** (Vehicle, Trip, StopTime, VehiclePosition) | Complete | YES — the model is correct as-is |
-| **Simulation engine** (`compute_position_at`) | Deterministic, DB-free | YES — add optional Route.path interpolation |
-| **VehicleLocationProvider Protocol** | Clean abstraction | YES — future real-API provider plugs in here |
-| **SimulationService** | Start/stop/record | YES — unchanged |
-| **Routing graph** (`build_graph`, TransitGraph) | Complete with ride/walk edges | YES — rebuilt from enriched data |
-| **Journey search** (Dijkstra, snapping) | Complete | YES — works with enriched graph |
-| **Seeding/import pipeline** | JSON/CSV parsers, validation, importer | YES — extend for trips/stop_times/geometry |
-| **All 406 tests** | Passing | MUST preserve |
-
-### What Needs Extension (Not Replacement)
-
-1. **`ImportDataset`**: Currently only agencies/stops/routes/route_stops. Must add trips, stop_times, service_calendars, route geometry.
-2. **`Stop` model**: Needs `coordinate_source` and `coordinate_confidence` columns to track provenance.
-3. **`Route` model**: `path` column exists but is always NULL. Needs population from OSM-derived geometry + provenance tracking.
-4. **`RouteStop` model**: `distance_along_route_m` exists but is always NULL. Needs computation from route geometry.
-5. **`simulation.timing`**: Currently uses flat 20 km/h for all routes. Must become route-aware when real timetable offsets exist.
-6. **`simulation.engine`**: Currently interpolates straight-line between stops. Must optionally follow `Route.path` when available.
-7. **Realtime API schemas**: Currently bare-bones. Needs bearing, scheduled arrival, ETA, delay, geometry.
-8. **Static transit API**: `Route.path` is deliberately not serialized yet. Must expose GeoJSON.
-
----
-
-## B. Data Architecture — How `transit_data.json` Becomes Database Records
-
-### The Pipeline
-
-```
-transit_data.json (canonical research dataset)
-    │
-    ├── operators ──────► Agency rows
-    ├── stops ──────────► Stop rows (with coordinate_source/confidence)
-    ├── routes ─────────► Route rows
-    ├── route_stops ────► RouteStop rows
-    ├── trips ──────────► Trip + StopTime rows (for 4 researched routes)
-    └── service_calendars ──► metadata for trip generation
-```
-
-### Key Design Decision: `transit_data.json` is the Single Source of Truth
-
-- All data comes from this file. No fabrication.
-- Stops with `latitude: null` remain null in the DB until geospatial enrichment fills them.
-- Routes with `geometry: "UNKNOWN"` remain null in `Route.path` until geometry enrichment fills them.
-- The 4 researched timetable patterns become real `Trip`/`StopTime` rows.
-- Other routes get simulated timing (derived from speed/distance assumptions), clearly marked as such.
-
-### Import Schema Extension
-
-Extend `ImportDataset` in `seeding/import_schema.py`:
-
-```python
-@dataclass(frozen=True)
-class ImportTripPattern:
-    """A canonical trip pattern: one direction of one route, with headway metadata."""
-    route_ref: str
-    direction: str  # "forward" | "backward"
-    headway_minutes: float
-    total_trips_per_day: int
-    first_trip_start: str  # "HH:MM:SS"
-    last_trip_start: str | None  # "HH:MM:SS" or null
-    source_pdf: str | None
-    confidence: str
-
-@dataclass(frozen=True)
-class ImportStopTime:
-    """One stop's arrival/departure offsets within a canonical trip pattern."""
-    stop_ref: str
-    sequence: int
-    arrival_offset_s: int
-    departure_offset_s: int
-
-@dataclass(frozen=True)
-class ImportDataset:
-    # ... existing fields ...
-    trip_patterns: tuple[ImportTripPattern, ...] = field(default_factory=tuple)
-    # stop_times keyed by (route_ref, direction) -> tuple of ImportStopTime
-    trip_stop_times: dict[tuple[str, str], tuple[ImportStopTime, ...]] = field(default_factory=dict)
-```
-
-### Parser Extension
-
-Extend `seeding/parsers.py` to parse the `trips` array from `transit_data.json`:
-
-- Each entry in `transit_data.json`'s `trips` array contains `route`, `direction`, `headway_minutes`, `total_trips_per_day`, `first_trip_start`, `last_trip_start`, `source_pdf`, `confidence`, and a `stop_times` sub-array.
-- The parser creates `ImportTripPattern` + associated `ImportStopTime` tuples.
-
-### Importer Extension
-
-Extend `seeding/importer.py` to:
-
-1. Import agencies, stops, routes, route_stops as before (get-or-create pattern).
-2. For each `ImportTripPattern` with a matching Route row:
-   - Generate `Trip` rows: one per trip-per-day, with `scheduled_start_time` = first_trip_start + n × headway_minutes.
-   - Generate `StopTime` rows from the canonical stop_times, copying offsets verbatim.
-3. Commit in a transaction.
-
-### Validation Extension
-
-Extend `seeding/validation.py` to validate:
-
-- Trip patterns reference valid route_ref/stop_ref.
-- Stop times are non-decreasing per trip pattern.
-- First stop arrival_offset_s == 0.
-- Last stop arrival == departure (no dwell at terminus).
-- Headway > 0, total_trips > 0.
-
----
-
-## C. Geospatial Enrichment Architecture
-
-### Strategy: Nominatim (OSM) Geocoding with Provenance Tracking
-
-**Stop coordinates will be obtained via OpenStreetMap Nominatim API**, then stored with full provenance.
-
-### New Columns on `Stop` Model
-
-```python
-# backend/db/models/stop.py — additions
-coordinate_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
-# Values: "SEED_DATUM", "NOMINATIM", "MANUAL_VERIFIED", null (unknown)
-
-coordinate_confidence: Mapped[str | None] = mapped_column(String(20), nullable=True)
-# Values: "OFFICIAL", "VERIFIED", "APPROXIMATE", "RECONSTRUCTED", "UNKNOWN"
-# Carried from transit_data.json's confidence field, or set during enrichment.
-```
-
-### Enrichment Process
-
-1. **Script** (`scripts/geocode_stops.py`): Reads all Stops with null coordinates from DB.
-2. For each stop, queries Nominatim with `{stop_name} Islamabad` or `{stop_name} Rawalpindi`.
-3. Validates result: must be within Islamabad/Rawalpindi bounding box (33.5°N–33.85°N, 73.0°E–73.3°E).
-4. If multiple candidates: pick closest to district centroid, or flag for manual review.
-5. Updates Stop: `location = ST_SetSRID(ST_MakePoint(lon, lat), 4326)`, `coordinate_source = "NOMINATIM"`, `coordinate_confidence = "APPROXIMATE"`.
-6. Stops that fail geocoding remain null with `coordinate_confidence = "UNKNOWN"`.
-
-### Why Nominatim
-
-- Free, no API key required (polite usage: max 1 req/sec).
-- OpenStreetMap data is the most complete source for Pakistani transit stops.
-- ~80 stops to geocode — well within Nominatim's fair-use limits.
-- Results are deterministic and reproducible (same query → same result).
-- Alternative: Overpass API for bulk queries (more complex, same data source).
-
-### What We Do NOT Do
-
-- Do NOT fabricate coordinates.
-- Do NOT assume all stops can be geocoded (some names are ambiguous).
-- Do NOT geocode stops that already have APPROXIMATE coordinates from the seed dataset (keep those, they're known-good enough).
-- Do NOT overwrite coordinates that already exist — only fill nulls.
-
----
-
-## D. Route Geometry Architecture
-
-### Strategy: OSRM Road-Snapping
-
-**Route geometry (polyline) will be obtained by snapping the ordered stop sequence to road paths using OSRM.**
-
-### Process
-
-1. For each Route with ordered RouteStop stops that have coordinates:
-   - Collect stop coordinates in sequence.
-   - Query OSRM's `trip` or `route` service with these waypoints.
-   - Receive a GeoJSON LineString or overview polyline.
-   - Store in `Route.path` as PostGIS LINESTRING.
-   - Set `geometry_source = "OSRM"` and `geometry_confidence = "OSM-DERIVED"`.
-
-2. For routes where stops don't all have coordinates yet:
-   - Leave `Route.path = NULL`.
-   - `geometry_confidence = "UNKNOWN"`.
-
-3. Compute `RouteStop.distance_along_route_m` from the geometry:
-   - Walk the LineString, accumulating distance to each stop's nearest point on the path.
-
-### OSRM Usage
-
-- **Development**: Use OSRM demo server (`https://router.project-osrm.org`) — free, no key, rate-limited.
-- **Production**: Self-host OSRM with OSM data for Pakistan (single `osrm-backend` Docker container, ~2GB data file).
-- **Offline fallback**: Straight-line geometry between stops (marked `confidence = "RECONSTRUCTED"`).
-
-### New Columns on `Route` Model
-
-```python
-# backend/db/models/route.py — additions
-geometry_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
-# Values: "OSRM", "MANUAL_VERIFIED", null (unknown)
-
-geometry_confidence: Mapped[str | None] = mapped_column(String(20), nullable=True)
-# Values: "OFFICIAL", "OSM-DERIVED", "RECONSTRUCTED", "UNKNOWN"
-```
-
-### Alternative Considered: Overpass API + Direct OSM Geometry
-
-- Could query OSM for `route=bus` relations tagged for this network.
-- Problem: CDA feeder routes likely don't have complete OSM route relations.
-- OSRM snapping is more reliable for arbitrary stop sequences.
-- Decision: OSRM for now; check OSM route relations as a future enhancement.
-
----
-
-## E. Timetable/Trip Architecture
-
-### How the 4 Researched Timetable Patterns Become Real Trip/StopTime Records
-
-For each of FR-01, FR-04, FR-07, FR-14:
-
-1. **One canonical pattern per direction** (from `transit_data.json`'s `trips` array).
-2. **Generate N Trip rows**, one per trip-per-day:
-   - `Trip.route_id` = the Route's UUID
-   - `Trip.status` = "scheduled"
-   - `Trip.scheduled_start_time` = first_trip_start + n × headway_minutes (for n = 0..N-1)
-3. **Generate StopTime rows for each Trip**:
-   - Copy the canonical stop_times verbatim (arrival_offset_s, departure_offset_s are relative to trip start).
-   - `StopTime.stop_id` = matching Stop UUID (looked up by name during import).
-
-### Example: FR-01 (16 trips/day, 60-min headway)
-
-```
-Trip 1: start = 07:15:00
-  StopTime: cda_khanna_pul, arr=0, dep=0
-  StopTime: cda_zia_masjid, arr=168, dep=188
-  ... (26 stops)
-  StopTime: cda_nust_metro_station, arr=3493, dep=3493
-
-Trip 2: start = 08:15:00
-  StopTime: cda_khanna_pul, arr=0, dep=0
-  ... (identical offsets, shifted by 3600s)
-```
-
-### For Routes WITHOUT Timetable Data (Red/Orange/Blue/Green + 18 unfetched feeders)
-
-- No Trip/StopTime rows are generated during import.
-- The existing `build_trip_for_route` / `compute_stop_time_offsets` path remains available for on-demand demo trip creation (as it does today).
-- These routes can still be displayed on the map (stops, route geometry) without trips.
-- The simulation control API can create demo trips as needed.
-
-### Future Timetable Additions
-
-When more CDA PDFs are fetched:
-1. Add new entries to `transit_data.json`.
-2. Re-run import — the importer is idempotent (get-or-create for static data, replace for trips).
-3. No schema changes needed.
-
----
-
-## F. Simulation Architecture
-
-### How the Existing Simulation Engine Consumes Real Data
-
-**No fundamental changes to the simulation engine are needed.** The architecture already supports this:
-
-1. **Real timetable available** (FR-01/04/07/14):
-   - `Trip` rows exist with real `StopTime` offsets.
-   - `load_trip_schedule()` loads them into `TripSchedule`.
-   - `compute_position_at(schedule, elapsed_s)` works exactly as today.
-   - Result: bus positions match real scheduled times.
-
-2. **No real timetable** (demo trips):
-   - `build_trip_for_route()` creates Trip + StopTimes from RouteStop order + speed/dwell assumptions.
-   - `compute_position_at()` works identically.
-   - Result: plausible but not real-world timing.
-
-3. **Route.path available** (geometry enrichment done):
-   - `compute_position_at()` can optionally interpolate along the polyline instead of straight-line.
-   - When `Route.path` is NULL, falls back to current straight-line interpolation.
-   - This is an **additive enhancement**, not a replacement.
-
-### Specific Changes
-
-1. **`simulation/engine.py`** — Add optional `route_geometry` parameter to `compute_position_at()`:
-   ```python
-   def compute_position_at(
-       schedule: TripSchedule,
-       elapsed_s: float,
-       *,
-       vehicle_id: uuid.UUID | None = None,
-       as_of: datetime | None = None,
-       route_geometry: list[tuple[float, float]] | None = None,  # NEW
-   ) -> SimulatedPosition:
-   ```
-   When `route_geometry` is provided and the vehicle is `en_route`, interpolate along the polyline instead of straight-line between stops. When None, use current behavior.
-
-2. **`simulation/provider.py`** — `SimulatedVehicleLocationProvider._position_for_trip()` optionally loads `Route.path` and passes it to `compute_position_at()`.
-
-3. **`simulation/timing.py`** — No changes for routes with real timetable data (offsets come from DB). The `compute_stop_time_offsets()` function remains available for demo-trip creation.
-
-### Multiple Simultaneous Buses
-
-- Already fully supported by the existing architecture.
-- Real headway data informs how many Trips should be created per route.
-- For FR-04/FR-07 (97 trips/day, 10-min headway), that's ~10 concurrent trips during peak.
-- The simulation control API or a seed script creates the fleet.
-
----
-
-## G. Realtime API — Exact Endpoints and Response Contracts
-
-### New Endpoints
-
-| Method | Path | Purpose | Auth |
-|--------|------|---------|------|
-| `GET` | `/api/transit/routes/{route_id}/geometry` | GeoJSON LineString for a route | None |
-| `GET` | `/api/transit/stops/{stop_id}/nearby` | Nearby stops by distance | None |
-| `GET` | `/api/transit/realtime/vehicles/{vehicle_id}/eta` | ETA at next stops | None |
-| `GET` | `/api/transit/realtime/fleet` | All active vehicles with full context | None |
-
-### Modified Endpoints
-
-**`GET /api/transit/routes/{route_id}`** — Add `geometry` field:
-```json
+Layer 1 -> Layer 2 input:
 {
-  "id": "...",
-  "short_name": "FR-04",
-  "geometry": {
-    "type": "LineString",
-    "coordinates": [[73.065, 33.699], [73.072, 33.704], ...]
-  },
-  "geometry_confidence": "OSM-DERIVED",
-  "stops": [...]
+  "normalized_text": string,       // clean, ASR/typed, post-normalization
+  "detected_language": "en" | "ur" | "roman-ur" | "mixed",
+  "input_modality": "voice" | "text",
+  "asr_confidence"?: number        // if available from the ASR model, passed through for Layer 2 to factor into clarification decisions (e.g. low-confidence transcription -> ask for confirmation rather than acting on it)
 }
-```
 
-**`GET /api/transit/realtime/vehicles`** — Enhance `VehiclePositionRead`:
-```json
+Layer 2 -> Layer 1 (return path, TTS only):
 {
-  "vehicle_id": "...",
-  "trip_id": "...",
-  "route_id": "...",
-  "route_short_name": "FR-04",
-  "route_color": "#E53935",
-  "location": {"latitude": 33.704, "longitude": 73.072},
-  "bearing": 45.2,
-  "speed_kmh": 18.5,
-  "status": "en_route",
-  "current_stop_id": "...",
-  "current_stop_name": "Melody Market",
-  "next_stop_id": "...",
-  "next_stop_name": "Abpara Market",
-  "scheduled_arrival_next_stop": "2026-08-16T14:32:00Z",
-  "estimated_arrival_next_stop": "2026-08-16T14:32:00Z",
-  "delay_seconds": 0,
-  "elapsed_s": 1247.5,
-  "as_of": "2026-08-16T14:27:07Z"
+  "text_to_speak": string,         // Layer 2's grounded explanation, verbatim
+  "language": "en" | "ur" | "roman-ur"
 }
 ```
 
-### Response Schema Definitions
+### 4.4 What's confirmed vs. must be verified at kickoff
 
-```python
-class RouteGeometryRead(BaseModel):
-    geometry: dict | None  # GeoJSON LineString or null
-    geometry_source: str | None
-    geometry_confidence: str | None
+Unchanged from the prior revision's research findings (still accurate,
+re-stated concisely here — full detail in §10):
+- **Confirmed**: English ASR and TTS via Alibaba Cloud Model Studio
+  (Qwen3-ASR, CosyVoice/Qwen-TTS).
+- **Not confirmed in published language lists**: Urdu ASR/TTS. Roman
+  Urdu is not a distinct "speech language" (it's Urdu speech
+  transliterated at the text layer, not a different acoustic language),
+  so native Roman-Urdu *speech* recognition is really "does Urdu speech
+  recognition work" restated — the same open question.
+- **Text-based Urdu/Roman-Urdu is unaffected by this gap** — it never
+  touches Layer 1's ASR/TTS models at all when typed, and even when
+  spoken-then-transcribed by a fallback (§4.5), the normalized text
+  handed to Layer 2 is just text, which Qwen (Layer 2) handles
+  natively and well regardless of ASR provenance.
 
-class VehiclePositionRead(BaseModel):
-    # ... existing fields ...
-    bearing: float | None = None
-    speed_kmh: float | None = None
-    route_short_name: str | None = None
-    route_color: str | None = None
-    current_stop_name: str | None = None
-    next_stop_name: str | None = None
-    scheduled_arrival_next_stop: datetime | None = None
-    estimated_arrival_next_stop: datetime | None = None
-    delay_seconds: float | None = None
+### 4.5 Fallback (no feature is blocked on an unverified capability)
 
-class ETARead(BaseModel):
-    stop_id: uuid.UUID
-    stop_name: str
-    sequence: int
-    scheduled_arrival: datetime
-    estimated_arrival: datetime
-    delay_seconds: float
+If Alibaba's Urdu ASR/TTS proves unavailable or low-quality at kickoff
+verification (§10), the **client-side/browser speech APIs** (widely
+available cross-platform, including Urdu on many devices) transcribe
+locally and feed the **same** `normalized_text` contract into Layer 2 —
+Layer 2 and everything downstream is completely unaware of which
+transcription path produced its input. This is the single most important
+resilience property of this architecture: **the Speech/NLP layer's
+output contract is stable regardless of which underlying model produces
+it**, so a kickoff-day finding about Urdu ASR support changes an
+implementation detail inside Layer 1, never anything above it.
+
+---
+
+## 5. Layer 3 — Geospatial Transit Intelligence
+
+### 5.1 Why this deserves to be its own layer, not a routing sub-step
+
+This is the direct response to the senior's third point. The honest
+technical evaluation:
+
+**Does a genuine learned geospatial/routing model add enough value for
+this hackathon to justify its complexity? No — and here's the reasoning,
+not just an assertion:**
+
+- The research on learned routing (graph neural networks predicting
+  travel time / edge weights, e.g. recent work on GNN-based shortest-path
+  approximation and dynamic-routing embeddings) is real and legitimate,
+  but in every credible production and research design, **the learned
+  component predicts edge weights or travel-time corrections that feed
+  into a classical shortest-path algorithm — it does not replace
+  pathfinding itself.** That is: even state-of-the-art systems keep
+  Dijkstra/A\*-family search as the pathfinding mechanism and use
+  learning only to improve the *cost function* the search operates over.
+  This project already has exactly that shape planned — it's the ETA ML
+  component (§8), which predicts travel-time/delay values that could, in
+  a future iteration, feed back into edge costs. Building a *second*,
+  redundant "geospatial routing model" would duplicate that role without
+  adding a new capability.
+- A GNN-based router would require substantial real historical
+  trajectory/travel-time data to train meaningfully — this project has
+  none yet (no real vehicle telemetry exists; see §2's realtime-data
+  gap, unchanged from the prior plan) and would be training on synthetic
+  simulation data at best, at which point it is not learning anything
+  the deterministic simulation-derived cost function doesn't already
+  encode directly and more transparently.
+- Transit routing has a hard, non-negotiable correctness requirement
+  this project must not compromise: **never invent a road, stop,
+  transfer, route, walking distance, or timetable.** A neural router
+  is a plausible-answer generator, not a constraint-satisfying one,
+  making it fundamentally the wrong tool for this specific guarantee,
+  regardless of how much data were available.
+
+**What genuinely does add hackathon-relevant value, and is real
+"geospatial intelligence" rather than a rebrand of existing code:**
+treating the *already-built* PostGIS/OSRM/Nominatim capabilities as a
+**distinct, explicit reasoning layer** that Qwen calls as tools — spatial
+candidate generation (which stops are near a resolved location),
+pedestrian-distance analysis (real walking distance/time via OSRM, not
+straight-line), and route-geometry retrieval. This is legitimate
+geospatial computation, it is demoable ("here's how we resolve 'Saddar'
+to actual candidate boarding stops using real spatial queries, not string
+matching"), and — critically — **most of the underlying capability
+already exists and is already verified** (§2). The hackathon work is
+packaging it as a clean, tool-callable layer with its own contract, not
+building new geospatial ML.
+
+**Decision, stated explicitly per the senior's request:** No learned
+geospatial/neural routing model is included in this architecture. The
+geospatial intelligence layer is a computational/deterministic layer
+built on PostGIS/OSM/OSRM. This is not a consolation choice — it is the
+technically correct one for a system that must remain constraint-safe,
+and it is honestly a stronger demo story ("real spatial database queries
+against real transit data" is impressive and true) than a neural router
+would be if judges probed it.
+
+### 5.2 Responsibilities
+
+- **Location/place-name resolution**: turn a free-text place name
+  (from Layer 2's extracted intent) into a coordinate/stop candidate
+  set. Two-tier approach (already the right design from the prior
+  revision, reaffirmed): (1) fast fuzzy match against known `Stop.name`
+  values and curated landmark aliases — in-memory, instant, no external
+  dependency; (2) fallback to live Nominatim geocoding (already
+  integrated) for unmatched names.
+- **PostGIS spatial candidate queries**: given a resolved coordinate,
+  find candidate boarding/alighting stops within a configurable radius —
+  this already exists as the walking-radius logic inside
+  `routing/snapping.py`; Layer 3 exposes it as an independently callable
+  operation rather than only as an internal step of a single monolithic
+  journey search.
+- **Nearby-stop discovery**: general "what's near this point" queries,
+  useful both for journey planning and for answering conversational
+  questions like "what stops are near me" without a full journey search.
+- **Pedestrian/walking-distance analysis**: real walking distance/time
+  between a point and a stop (already computed via the existing walking
+  edge-cost provider in `routing/`), exposed as a Layer-3 operation.
+- **OSM/OSRM route geometry retrieval**: existing `Route.path` /
+  `route_geometry` data, exposed for both map rendering and for Qwen to
+  reference when explaining a journey ("this follows the road via
+  Murree Road").
+- **Transit candidate-set generation**: the combination of the above —
+  given an origin and destination, produce the candidate stop pairs and
+  edges that Layer 4's optimizer will search over. This is the
+  boundary: Layer 3 produces *candidates*, Layer 4 produces the
+  *authoritative path*.
+
+### 5.3 Contract with Layer 2 (tool interface) and Layer 4
+
+Layer 3 is exposed to Qwen (Layer 2) as a small set of **callable
+tools** (Model Studio's function-calling mechanism — see §6.3), each
+with a strict, validated schema:
+
+```
+tool: resolve_location(text: string) 
+  -> { candidates: [{stop_id, name, lat, lon, match_confidence, match_type: "exact_stop"|"fuzzy_stop"|"geocoded"}] }
+
+tool: nearby_stops(lat: float, lon: float, radius_m: int)
+  -> { stops: [{stop_id, name, lat, lon, distance_m}] }
+
+tool: walking_distance(from_lat, from_lon, to_lat, to_lon)
+  -> { distance_m: float, duration_s: float }
+
+tool: route_geometry(route_id: string)
+  -> GeoJSON LineString | null   // null if this route has no geometry yet — never fabricated
+```
+
+Layer 3's outputs feed **either** directly back to Qwen (for
+conversational questions like "what stops are near NUST") **or**
+into Layer 4 as part of the assembled `JourneySearchRequest` (for an
+actual journey search) — Layer 2 decides which, per §6.3's tool-selection
+responsibility. Layer 3 itself has no opinion about which stops end up
+in a final journey; it only supplies candidates and measurements.
+
+---
+
+## 6. Layer 2 — Qwen Journey Planner (the genuine agent)
+
+### 6.1 What "agent" means here, concretely
+
+This is the layer the senior feedback wants elevated from "text-to-JSON
+converter" to genuine agent. Concretely, that means Qwen (via Model
+Studio's tool-calling / function-calling interface) is given:
+- A system prompt describing its role, the available tools (Layer 3's
+  geospatial tools, plus a `search_journeys` tool that wraps Layer 4),
+  and the hard constraint that it must never state a fact not returned
+  by a tool call.
+- Multi-turn conversation state (prior turns' resolved requests and
+  results, kept server-side per session).
+- The ability to make **multiple tool calls across a turn** — e.g.
+  resolve both origin and destination via `resolve_location`, then call
+  `search_journeys`, rather than being handed a single pre-built request
+  object to rubber-stamp. This is the concrete difference between
+  "agent with tool selection" and "one-shot converter": the model
+  decides *which* tools to call and *in what order*, based on what the
+  user said and what's still missing.
+
+### 6.2 Responsibilities
+
+- **Intent understanding**: what does the user want — a journey search,
+  a status question about an existing result ("is the bus late?"), a
+  nearby-stops question, a fare question?
+- **Preference/constraint extraction**: origin, destination, time
+  constraints, routing objective, walking/transfer tolerance —
+  classified into the fixed set of backend-supported filter values (see
+  §9.3, unchanged from prior plan — Qwen classifies vague language into
+  buckets, never invents an exact number the user didn't imply).
+- **Clarification**: when `resolve_location` returns multiple ambiguous
+  candidates, or a required field is missing, Qwen asks a clarifying
+  question rather than guessing — this is a genuine agentic decision
+  (interpreting tool output and deciding the conversation isn't ready to
+  proceed), not just schema validation.
+- **Tool selection**: deciding which Layer-3 tools and which Layer-4
+  call are needed for a given turn, and in what sequence (see worked
+  example, §6.4).
+- **Multi-turn context**: resolving "which one has less walking" against
+  the previous turn's `JourneySearchResponse` (already fetched, not
+  re-derived from memory) — grounding every follow-up in real data
+  already retrieved this session.
+- **Grounded explanation**: after Layer 4 returns authoritative results,
+  narrate them in the user's detected language, using only values
+  present in the tool results (mechanically enforced — see §6.5).
+
+### 6.3 Tool inventory (what Qwen can call)
+
+| Tool | Layer | Returns |
+|---|---|---|
+| `resolve_location(text)` | 3 | candidate stops/coordinates |
+| `nearby_stops(lat, lon, radius_m)` | 3 | nearby stop list |
+| `walking_distance(from, to)` | 3 | distance/duration |
+| `route_geometry(route_id)` | 3 | GeoJSON or null |
+| `search_journeys(origin, destination, objective, max_walk_m?, max_transfers?, departure_time?)` | 4 (wraps the existing/extended `POST /transit/journeys/search`) | `JourneySearchResponse` — candidate journeys |
+| `get_vehicle_eta(route_id or trip_id)` | 4/existing realtime API | scheduled + simulated ETA, delay |
+| `get_fare_quote(ride_leg_count)` | existing fares API | fare amount |
+
+Every tool call and its result is logged as part of the session's
+structured trace — this is what makes the "grounded, not hallucinated"
+property testable (§6.5) and what makes the system explainable to
+judges: a judge can literally be shown "here is the sequence of tool
+calls that produced this answer."
+
+### 6.4 Worked example (agentic, multi-step — not a single conversion)
+
+> User (voice, Roman Urdu): *"Yaar mujhe Saddar se NUST jana hai, kam se
+> kam paidal chalna paray."*
+
+1. Layer 1 → `{normalized_text: "Yaar mujhe Saddar se NUST jana hai, kam
+   se kam paidal chalna paray.", detected_language: "roman-ur"}`
+2. Layer 2 (Qwen) reasons: this is a journey request; origin "Saddar" and
+   destination "NUST" both need resolving; preference is a walking
+   constraint.
+3. Layer 2 calls `resolve_location("Saddar")` → multiple candidates
+   returned (e.g. "Saddar Bus Terminal", "Saddar Chowk") with different
+   confidences.
+4. Layer 2 decides: if the top candidate's confidence is high enough
+   (a threshold set during hackathon tuning), proceed with it; if
+   genuinely ambiguous, ask: *"Saddar Bus Terminal, ya Saddar Chowk?"* —
+   a real clarification decision based on tool output, not a scripted
+   branch.
+5. Layer 2 calls `resolve_location("NUST")` → resolves cleanly (single
+   strong match).
+6. Layer 2 classifies "kam se kam paidal chalna paray" →
+   `max_walking_distance_class: "strict"` (per §9.3's fixed bucket
+   scheme — no invented number).
+7. Layer 2 calls `search_journeys(origin=<resolved>, destination=
+   <resolved>, objective="least_walking", max_walk_m=<strict bucket
+   value>)`.
+8. Layer 4 (existing deterministic engine, extended with filters)
+   returns a `JourneySearchResponse`.
+9. Layer 2 narrates the result in Roman Urdu, referencing only what
+   came back in step 8.
+10. Response returned as text (and, if TTS is wired and viable, as
+    audio via Layer 1's return path).
+
+This is a genuine multi-step agent trace — location resolution,
+conditional clarification, preference classification, and a
+routing-tool call — not a single "parse this sentence into a form"
+operation, which is exactly the elevation the senior feedback asked for.
+
+### 6.5 Enforcing groundedness mechanically (unchanged principle,
+restated for the new layering)
+
+- Every tool Qwen can call returns **schema-validated, backend-sourced
+  data only** — there is no tool through which Qwen can write a fact
+  into the system, only read authoritative facts out.
+- The narration step's system prompt instructs the model to state only
+  facts present in the tool-call trace for the current turn.
+- **Testable, not just prompted**: automated tests sample narration
+  outputs and check that every number/time/place mentioned traces back
+  to a tool result in that turn's trace — the concrete, checkable version
+  of "never invent a route, fare, ETA, walking distance, timetable, or
+  delay," per the senior's explicit requirement.
+- If a user's request needs a capability with no corresponding tool
+  (e.g. "cheapest route" before fare-aware ranking exists in Layer 4),
+  Qwen is instructed to say so honestly rather than approximate an
+  answer — an explicit, testable "graceful refusal" behavior.
+
+---
+
+## 7. Layer 4 — Deterministic Routing / Optimization (Dijkstra's actual
+role, decided explicitly)
+
+### 7.1 Decision
+
+**Dijkstra remains.** It is retained as the pathfinding algorithm inside
+the deterministic routing/optimization layer, exactly where it already
+lives (`routing/search.py`), because:
+- It is correct, fast enough at this network's scale (a city-pair
+  transit network, not a continental road graph), already implemented,
+  already tested, and already the right tool for exact-shortest-path
+  computation over a graph with well-defined edge costs.
+- The senior feedback explicitly warns against blindly deleting it in
+  favor of an unproven neural model — and §5.1's research-grounded
+  evaluation confirms that warning was correct: nothing in the current
+  data or timeline justifies replacing it.
+- Its role in the product narrative changes, not its implementation:
+  it is **not** presented to judges as "the AI." It is presented as one
+  well-chosen component inside a layered system whose actual AI
+  differentiators are Layers 1–3's language/geospatial reasoning and
+  Layer 2's agentic orchestration, plus the separately-staged ETA ML
+  (§8). This reframing costs nothing in code and fixes the "AI wrapper
+  around Dijkstra" perception risk the senior flagged.
+
+### 7.2 Responsibilities (unchanged from the prior plan's Phase A,
+reaffirmed and now explicitly scoped as "Layer 4")
+
+- Valid transit path search (Dijkstra, existing).
+- Transfer computation, walking-leg computation, travel-time totals
+  (existing).
+- Route filtering: `objective`, `max_walking_distance`, `max_transfers`
+  (existing objective selection; filters are the scoped-but-not-yet-built
+  extension, carried forward from the prior plan's Phase A1 — see §12).
+- Multi-candidate journey responses (carried forward, same scope).
+- Fare-constraint application: filtering/annotating candidates by fare
+  once `get_fare_quote` is available as a tool (existing fares service,
+  no change needed — it's already callable).
+
+### 7.3 Contract with Layer 3 and Layer 2
+
+Layer 4's public contract is, and remains, the existing
+`POST /transit/journeys/search` HTTP endpoint (extended per §12) —
+**this is deliberate**: Layer 2 calls it the same way the manual
+frontend form does, which is the mechanical proof that AI cannot bypass
+the deterministic engine (unchanged, load-bearing principle from the
+prior revision).
+
+```
+Input (from Layer 2's search_journeys tool call, itself built from
+Layer 3's resolved candidates):
+  JourneySearchRequest { origin, destination, objective, max_walk_m?,
+    max_transfers?, departure_time? }
+
+Output (authoritative, unchanged shape from existing API):
+  JourneySearchResponse { journeys: [Journey { legs, total_duration_s,
+    total_walk_m, transfer_count, route_geometry, ... }] }
 ```
 
 ---
 
-## H. Map/Frontend Contract
+## 8. ETA ML Component (unchanged, reaffirmed as a separate component per
+explicit instruction)
 
-### What the Frontend Receives to Render the Map
+Kept exactly as previously designed — this section restates it briefly
+for completeness in this kickoff document, without re-deriving it:
 
-**1. Map Initialization / Static Transit Data:**
 ```
-GET /api/transit/stops          → [{id, name, location: {lat, lon}, distance_m?}]
-GET /api/transit/routes         → [{id, short_name, long_name, color, agency_id}]
-GET /api/transit/routes/{id}    → {id, short_name, color, geometry: GeoJSON, stops: [...]}
-GET /api/transit/agencies       → [{id, name, network_type}]
-```
-
-**2. Route Polylines (GeoJSON):**
-```
-GET /api/transit/routes/{id}/geometry → {
-  type: "LineString",
-  coordinates: [[lon, lat], ...],
-  confidence: "OSM-DERIVED"
-}
-```
-
-**3. Vehicle Markers (live positions):**
-```
-GET /api/transit/realtime/vehicles → [{
-  vehicle_id,
-  route_id,
-  route_short_name,
-  route_color,
-  location: {latitude, longitude},
-  bearing,
-  status,
-  current_stop_name,
-  next_stop_name,
-  scheduled_arrival_next_stop,
-  estimated_arrival_next_stop,
-  delay_seconds
-}]
+simulation/history (existing simulation engine as a generator)
+        ↓
+ETA training data (synthetic, Stage 2 — generated from timetable +
+                    simulation behavior, no real telemetry required)
+        ↓
+ML model (Stage 3 — gradient-boosted trees recommended; linear
+          regression as an explainable baseline; neural models
+          explicitly not recommended for this timeline/data volume)
+        ↓
+Alibaba PAI-EAS (Stage 3/4 — confirmed generic custom-model deployment
+                  path; deploy the trained artifact behind a small
+                  inference wrapper)
+        ↓
+ML ETA — returned ALONGSIDE (never replacing) the deterministic
+         simulation ETA, which remains the permanent fallback and the
+         value shown whenever the ML service is unavailable or has no
+         coverage for the requested route/time.
 ```
 
-**4. Vehicle Details:**
-```
-GET /api/transit/realtime/vehicles/{id} → same shape as above
-GET /api/transit/realtime/routes/{id}/vehicles → [same shape]
-```
+This component is architecturally independent of Layers 1–4: it
+augments `get_vehicle_eta`'s response (an existing/near-existing tool in
+§6.3's inventory) with an optional `ml_refined_eta` field. It has no
+dependency on the Speech/NLP or Journey Planner layers and can be built
+and demoed in isolation.
 
-**5. ETAs:**
-```
-GET /api/transit/realtime/vehicles/{id}/eta → {
-  vehicle_id,
-  trip_id,
-  etas: [{stop_id, stop_name, sequence, scheduled, estimated, delay}]
-}
-```
-
-**6. Journey Search Results (existing, enhanced):**
-```
-POST /api/transit/journeys/search → {
-  journeys: [{
-    legs: [
-      {type: "walk", from_location, to_location, distance_m, duration_s},
-      {type: "ride", route: {id, short_name, color}, board_stop, alight_stop,
-       intermediate_stops, duration_s, route_geometry: GeoJSON}
-    ]
-  }]
-}
-```
-
-**7. Nearby Stops:**
-```
-GET /api/transit/stops?latitude=...&longitude=...&radius_m=500 → [{..., distance_m}]
-```
+**Priority note (re-ranked in §11 below, per the two-day-prep /
+hackathon-timeline instruction):** this remains valuable but is
+correctly ranked below the core five-layer pipeline for demo purposes —
+a working conversational-voice-to-map journey is the demo's spine; ETA
+ML is a strong enhancement on top of it, not a substitute for it.
 
 ---
 
-## I. ETA/Delay Architecture
+## 9. Carried-Forward Product Components (reaffirmed, not re-litigated)
 
-### Data Model
+These sections are unchanged in substance from the prior revision.
+Restated briefly for kickoff-document completeness; see their fuller
+prior treatment for detail not repeated here.
 
-For simulated vehicles (deterministic):
-- **Scheduled arrival** = `Trip.scheduled_start_time + StopTime.arrival_offset_s`
-- **Simulated arrival** = identical to scheduled (deterministic, no randomness)
-- **Estimated arrival** = identical to scheduled (for simulated vehicles)
-- **Delay** = 0 always (for simulated vehicles)
+### 9.1 Map
+MapLibre + OSM/CARTO-derived vector tiles (Google Maps not recommended —
+API-key/billing/lock-in concerns, no material benefit for this region).
+Layer separation: basemap, transit-data overlay, route geometry, user
+location, realtime vehicle layer. Backend emits lat/lng/GeoJSON only.
 
-This is the correct design because:
-- The simulator IS the schedule. There's no "real" position to compare against.
-- Delay only becomes meaningful when real vehicle data exists.
-- The API contract is ready: `delay_seconds: 0` tells the frontend "no delay information."
+### 9.2 User location
+Device/browser geolocation as primary origin source; manual entry as
+fallback; **never** IP-based inference for routing origin.
 
-### Future Real-vehicle Scenario
+### 9.3 Route filtering (Qwen-assisted classification, backend-owned
+enforcement)
+Fixed filter set only: `objective` (fastest/fewest_transfers/
+least_walking), `max_walking_distance_class` (strict/moderate/relaxed,
+or an explicit number if the user gave one), `max_transfers` (explicit
+integer or unconstrained). Not implemented, and not to be claimed by
+narration: cheapest-route optimization, earliest-arrival/
+latest-departure solving (needs time-dependent routing — Phase A2,
+carried forward), accessibility filters (no data field exists — not
+fabricated).
 
-When real GPS feeds arrive:
-- **Scheduled arrival** = from `StopTime.arrival_offset_s`
-- **Actual arrival** = when vehicle actually passed the stop (from GPS feed)
-- **Estimated arrival** = predicted based on current position + speed + distance
-- **Delay** = estimated - scheduled (or actual - scheduled after the fact)
+### 9.4 Realtime + simulation
+`VehicleLocationProvider` Protocol abstraction unchanged — simulation
+today, real feed later, no caller changes required. Remaining backend
+work: `source: "simulated"` labeling, optional map-snapshot endpoint.
 
-The `VehicleLocationProvider` abstraction already handles this — the real provider returns the same `SimulatedPosition` shape, and the API layer computes delay from scheduled vs. actual.
+### 9.5 Fares
+DB-driven `FareRule`, server-computed, unchanged. AI boundary: figures
+narrated by Qwen must be copied verbatim from a `get_fare_quote` tool
+result, never estimated.
 
----
+### 9.6 Ticketing + QR
+Unchanged, fully working. A conversational journey result is the same
+shape a manually-searched one is, so "buy a ticket for this journey"
+requires no backend change regardless of how the journey was found.
 
-## J. Future Real-API Migration
+### 9.7 User accounts
+Unchanged. Register/login/JWT/bcrypt/roles already work; extensible
+fields (saved routes, history) explicitly deferred past hackathon scope.
 
-### The Abstraction Boundary
-
-```
-Realtime API Layer
-    │
-    ├── VehicleLocationProvider Protocol  ←── THIS IS THE SWAP POINT
-    │       │
-    │       ├── SimulatedVehicleLocationProvider (today)
-    │       └── RealGpsVehicleLocationProvider (future)
-    │
-    └── All consumers (realtime API, frontend, journey search)
-         Never know which provider is behind the Protocol
-```
-
-### What Changes When Real GPS Arrives
-
-1. Create `RealGpsVehicleLocationProvider` implementing `VehicleLocationProvider`.
-2. Change `api/transit/realtime/dependencies.py`'s `get_vehicle_location_provider()` to return the real provider.
-3. No API endpoints change. No frontend changes. No model changes.
-4. The `delay_seconds` field naturally becomes non-zero when real data differs from schedule.
-
-### Future Provider Considerations
-
-- Real GPS data may come as GTFS-RT VehiclePositions feed.
-- Parse into `SimulatedPosition`-compatible shape.
-- May need to handle: stale data, out-of-order updates, gaps.
-- The existing `VehicleLocationProvider` Protocol methods cover all these cases (return None for unknown, return empty list for nothing running).
+### 9.8 Admin dashboard
+Backend admin API exists, auth-gated. Hackathon-relevant additions:
+realtime/simulation status view, ticket inspection, data-quality view,
+and (new, carried forward) an AI/ETA subsystem health panel — cheap to
+build, demonstrates graceful degradation to judges.
 
 ---
 
-## K. Database/Alembic Changes
+## 10. Alibaba Services Requiring Kickoff Verification
 
-### Migration 1: Extend Stop with coordinate provenance
+Unchanged findings from the prior revision's research, consolidated
+here as the concrete Day-1 checklist:
 
-```
-ALTER TABLE stops ADD COLUMN coordinate_source VARCHAR(50);
-ALTER TABLE stops ADD COLUMN coordinate_confidence VARCHAR(20);
-```
+| Item | Status | Verification action |
+|---|---|---|
+| Model Studio access (Qwen chat, tool-calling) for the hackathon account | Documented and current; account-level access unconfirmed | Issue API key, make one successful tool-calling chat completion |
+| Qwen3-ASR / Fun-ASR / Paraformer — English | Confirmed language support | One live transcription test |
+| Qwen3-ASR / Fun-ASR / Paraformer — Urdu | **Not confirmed** in published language lists | Test against a real Urdu audio sample; record yes/no |
+| CosyVoice / Qwen-TTS — English | Confirmed language support | One live synthesis test |
+| CosyVoice / Qwen-TTS — Urdu | **Not confirmed** in published language lists | Test against Urdu text; record yes/no |
+| Qwen3.5-Livetranslate / Omni family (broader language speech-to-speech) | Broader language claims, Urdu coverage specifically unconfirmed | Only worth testing if the above Urdu ASR/TTS tests fail and time permits |
+| PAI-EAS custom model deployment | Documented generic-model deployment path confirmed | One trivial stub-endpoint deployment to validate the path before the real ETA model is trained |
+| Hackathon-provided credits/quota specifics | Not published generally — organizer-specific | Confirm directly from onboarding materials, do not assume a figure |
+| Qoder | Confirmed as a development tool (AI-native coding assistant), not a runtime architecture component | No verification needed — just don't design it into the product diagrams |
 
-### Migration 2: Extend Route with geometry provenance
-
-```
-ALTER TABLE routes ADD COLUMN geometry_source VARCHAR(50);
-ALTER TABLE routes ADD COLUMN geometry_confidence VARCHAR(20);
-```
-
-### No Other Model Changes Required
-
-- `Trip`/`StopTime` models are already correct for timetable data.
-- `VehiclePosition` model is already correct.
-- `RouteStop.distance_along_route_m` is already nullable — just needs population.
-
-### Alembic Ordering
-
-New migrations go after `4795c429e65f_add_users_fares_tickets.py` (the latest existing migration). Two separate migration files for clarity and atomicity.
+**Outcome of this checklist directly gates only Layer 1's ASR/TTS model
+choice** (§4.5's fallback already absorbs a "no" on Urdu without
+blocking anything else) — no other layer's design depends on how this
+checklist resolves.
 
 ---
 
-## L. Testing Strategy
+## 11. Hackathon Priority Ranking (re-ranked aggressively per the
+two-day-prep / demo-focused instruction)
 
-### Unit Tests (deterministic, no DB)
+### P0 — must work for a credible demo
+1. Real interactive map (MapLibre/OSM, existing geometry data)
+2. Device live location
+3. Real transit stops/routes (existing data foundation)
+4. Route geometry rendering where available (existing, coverage-limited)
+5. Geospatial location resolution (Layer 3 — mostly existing capability,
+   newly exposed as tools)
+6. Journey planning (Layer 4 — existing, extended with filters, Phase
+   A1)
+7. Route filtering (Layer 4 + Qwen classification, §9.3)
+8. Conversational AI — **text first**, English + Urdu + Roman Urdu
+   (Layer 2, built directly on Qwen's confirmed multilingual text
+   capability — no Alibaba-speech dependency for this P0 item)
+9. Voice input — **at minimum English**, via confirmed Alibaba ASR
+   (Layer 1)
+10. Qwen Journey Planner acting as an agent (tool selection,
+    clarification — §6, not just parsing)
+11. Simulation displayed on the map (existing)
+12. ETA (deterministic baseline — existing; this is the P0 ETA, not the
+    ML-refined one)
+13. Ticket purchase + QR ticket (existing)
+14. Authentication (existing)
 
-| Test | What it tests |
-|------|--------------|
-| `test_transit_data_parser.py` | Parsing `transit_data.json` into `ImportDataset` with trip patterns |
-| `test_geocoding_service.py` | Geocoding logic (mocked Nominatim responses) |
-| `test_route_geometry.py` | OSRM response parsing, LineString construction |
-| `test_trip_generation.py` | Generating Trip/StopTime rows from ImportTripPattern |
-| `test_engine_geometry_interpolation.py` | `compute_position_at` with route_geometry parameter |
+**Note on sequencing within P0:** items 1–7 and 11–14 are almost
+entirely *integration* of already-verified backend capability with a
+frontend built during the hackathon — they are lower-risk than items
+8–10, which are new build. Sequence the hackathon's early hours toward
+getting 1–7/11–14 wired end-to-end (a fully working manual-form
+version of the product) **before** layering the conversational pipeline
+on top, so there is always a working, demoable product even if Layers
+1–2 run into unexpected trouble.
 
-### Integration Tests (DB required)
+### P1 — major differentiators, build if P0 is solid with time to spare
+- Voice input/output for Urdu and Roman Urdu (native Alibaba path if
+  §10 confirms it; otherwise the client-side fallback per §4.5 — either
+  way this is P1, not P0, because P0's conversational requirement is
+  already satisfied by text)
+- Predictive ETA ML (§8) — strong differentiator, but correctly ranked
+  below the core pipeline; a partial result (trained model without full
+  PAI-EAS deployment, demoed via a local inference call) is an
+  acceptable fallback demo if time runs short
+- Multi-turn conversational follow-up ("which one has less walking?",
+  "is the bus late?") — §6.2's multi-turn context
+- TTS spoken responses (any language)
+- Richer admin dashboard (AI/ETA health panel, data-quality view)
+- Fare integration into conversational narration (low-cost once Layer 4
+  filters land — likely achievable within P0/P1 boundary depending on
+  time)
 
-| Test | What it tests |
-|------|--------------|
-| `test_transit_data_import.py` | Full import pipeline: JSON → ImportDataset → DB |
-| `test_geocode_stops_script.py` | Geocoding script against test DB (mocked Nominatim) |
-| `test_route_geometry_import.py` | OSRM → Route.path population |
-| `test_timetable_import.py` | Trip/StopTime generation from canonical patterns |
-| `test_enhanced_realtime_api.py` | Enhanced VehiclePositionRead response shape |
-| `test_route_geometry_api.py` | GeoJSON geometry endpoint |
-| `test_eta_api.py` | ETA endpoint response shape |
-| `test_nearby_stops.py` | Nearby stops with enriched coordinates |
-
-### Preserving Existing Tests
-
-- All 406 existing tests must continue passing.
-- No model changes that break existing test fixtures.
-- Import pipeline extensions are additive (new fields are optional).
-
----
-
-## M. Implementation Phases
-
-### Phase 1: Transit Data Import (Foundation)
-
-**Goal:** Import `transit_data.json` into the database.
-
-**Files to create/modify:**
-- `backend/seeding/import_schema.py` — Add `ImportTripPattern`, `ImportStopTime` to `ImportDataset`
-- `backend/seeding/parsers.py` — Parse trips/stop_times from JSON
-- `backend/seeding/validation.py` — Validate trip patterns
-- `backend/seeding/importer.py` — Import trip patterns → Trip/StopTime rows
-- `backend/seeding/transit_data_importer.py` — New: dedicated importer for `transit_data.json` format
-- `backend/scripts/import_transit_data.py` — CLI script
-- `backend/tests/test_transit_data_import.py`
-
-**Database changes:** None (schema is sufficient).
-
-**APIs added:** None (uses existing admin/import endpoints).
-
-**Tests:** Import all 28 routes, 97 stops, 4 timetable patterns. Verify Trip/StopTime row counts. Verify stop coordinates (null vs non-null). Verify idempotency.
-
-**Dependencies:** None new.
-
-**Expected result:** `transit_data.json` fully imported. 28 routes, 97 stops, 64+ Trip rows (16+25+23+18 canonical patterns, expanded to daily trip counts), corresponding StopTime rows.
-
-**Commit message:** `feat: import transit_data.json into database with trip/timetable patterns`
-
----
-
-### Phase 2: Geospatial Enrichment (Stop Coordinates)
-
-**Goal:** Obtain coordinates for stops that currently have null lat/lon.
-
-**Files to create/modify:**
-- `backend/db/models/stop.py` — Add `coordinate_source`, `coordinate_confidence` columns
-- `backend/alembic/versions/xxxx_add_stop_coordinate_provenance.py` — Migration
-- `backend/seeding/geocoding.py` — New: Nominatim geocoding service
-- `backend/scripts/geocode_stops.py` — CLI script
-- `backend/tests/test_geocoding.py`
-
-**Database changes:** 2 new columns on `stops` table.
-
-**APIs added:** None (coordinates appear in existing endpoints automatically).
-
-**Tests:** Geocode ~80 stops. Verify all APPROXIMATE stops unchanged. Verify geocoded stops within Islamabad/Rawalpindi bounds. Verify provenance tracking.
-
-**Dependencies:** `httpx` (already in requirements.txt) for Nominatim API calls.
-
-**Expected result:** ~60-70 of ~80 null-coordinate stops now have lat/lon. Remaining ~10-20 flagged as UNKNOWN.
-
-**Commit message:** `feat: geocode transit stops via Nominatim with provenance tracking`
+### P2 — stretch / explicitly future, not hackathon scope
+- Native Alibaba Urdu speech-to-speech if §10 confirms viability but
+  time doesn't allow full integration
+- Per-user saved routes/favorites/history-informed suggestions
+- Stage 4 real-observation ETA feedback loop (needs a real vehicle feed
+  that does not exist)
+- Additional transit operators/agencies, WebSocket realtime (decision
+  gated per the prior plan, unchanged), production-scale hardening,
+  full admin CRUD, advanced analytics
 
 ---
 
-### Phase 3: Route Geometry (OSRM Snapping)
+## 12. Implementation Notes for Qoder Handoff
 
-**Goal:** Obtain road-following polyline geometry for routes with complete stop coordinates.
+This section exists specifically to make the blueprint actionable at
+kickoff.
 
-**Files to create/modify:**
-- `backend/db/models/route.py` — Add `geometry_source`, `geometry_confidence` columns
-- `backend/alembic/versions/xxxx_add_route_geometry_provenance.py` — Migration
-- `backend/seeding/route_geometry.py` — New: OSRM route-snapping service
-- `backend/scripts/generate_route_geometry.py` — CLI script
-- `backend/api/transit/router.py` — Expose `Route.path` as GeoJSON in route detail
-- `backend/api/transit/schemas.py` — Add `geometry` field to `RouteDetail`
-- `backend/tests/test_route_geometry.py`
-
-**Database changes:** 2 new columns on `routes` table. `Route.path` populated for some routes.
-
-**APIs added/changed:**
-- `GET /api/transit/routes/{id}` — Response now includes `geometry` (GeoJSON LineString or null)
-- `GET /api/transit/routes/{id}/geometry` — New endpoint returning just the geometry
-
-**Tests:** Generate geometry for routes with complete stop coordinates. Verify GeoJSON LineString format. Verify RouteStop.distance_along_route_m computation. Verify existing route endpoints still work.
-
-**Dependencies:** `httpx` (existing) for OSRM API calls.
-
-**Expected result:** FR-01, FR-04, FR-07, FR-14 routes have road-following geometry. Red Line has geometry if all stops geocoded. Other routes remain NULL until stops are geocoded.
-
-**Commit message:** `feat: generate route geometry via OSRM with provenance tracking`
-
----
-
-### Phase 4: Enhanced Realtime API (Bearing, ETA, Delay)
-
-**Goal:** Expose richer vehicle position data for the frontend map.
-
-**Files to create/modify:**
-- `backend/api/transit/realtime/schemas.py` — Enhance `VehiclePositionRead`
-- `backend/api/transit/realtime/router.py` — Compute bearing, load stop names
-- `backend/simulation/engine.py` — Add bearing computation, optional route_geometry interpolation
-- `backend/simulation/provider.py` — Load Route.path, pass to engine
-- `backend/api/transit/realtime/eta_router.py` — New: ETA endpoint
-- `backend/tests/test_enhanced_realtime.py`
-
-**Database changes:** None.
-
-**APIs added/changed:**
-- `GET /api/transit/realtime/vehicles` — Enhanced response with bearing, stop names, ETA, delay
-- `GET /api/transit/realtime/vehicles/{id}` — Enhanced response
-- `GET /api/transit/realtime/vehicles/{id}/eta` — New: per-stop ETA list
-
-**Tests:** Verify bearing computation. Verify stop name resolution. Verify ETA calculation. Verify delay is 0 for simulated vehicles.
-
-**Dependencies:** None new.
-
-**Expected result:** Frontend receives all data needed to render vehicles with direction, next stop info, and arrival predictions.
-
-**Commit message:** `feat: enhance realtime API with bearing, stop names, ETA, and delay`
+- **Give Qoder this repository as-is, plus this document, as the
+  starting point.** The deterministic backend (§2) is reference code to
+  build on top of and extend — not to be regenerated from scratch.
+- **Build order recommendation** (supports the P0 sequencing note in
+  §11): (1) extend `routing/` with filters + multi-candidate responses
+  (small, well-scoped, existing code to extend — the prior plan's Phase
+  A1); (2) stand up the frontend map + manual journey form against the
+  existing/extended API, so a working non-AI product exists early; (3)
+  build Layer 3 as a thin tool-exposing wrapper around existing
+  `routing/snapping.py` and geocoding code — genuinely mostly
+  integration; (4) build Layer 2 (Qwen + tool-calling) against Layers 3
+  and 4's now-stable contracts; (5) build Layer 1 (ASR/TTS) last, since
+  its contract (§4.3) is stable and simple regardless of which
+  underlying model fulfills it, and its own internal choice (Alibaba vs.
+  fallback) is the one item genuinely gated on §10's kickoff-day
+  findings.
+- **Every layer's contract in this document (§4.3, §5.3, §6.3, §7.3) is
+  the interface Qoder should implement against** — treat them as fixed
+  points that let different people/sessions build different layers in
+  parallel once Layer 4's existing API and Layer 3's tool signatures are
+  agreed, without waiting on Layer 2's internal prompt-engineering to
+  stabilize first.
+- **Do not let ETA ML (§8) block the core pipeline.** It is
+  architecturally and practically independent; build it in parallel or
+  after P0 lands, never as a prerequisite for the conversational journey
+  flow.
+- **Testing discipline carried forward, restated for kickoff:** the
+  532 existing tests must not regress; new layers get groundedness tests
+  per §6.5, not just happy-path demos — a hallucination caught in
+  testing is far better than one caught by a judge.
 
 ---
 
-### Phase 5: Trip Generation Admin Endpoint
+## 13. Component Classification Summary (for quick reference)
 
-**Goal:** Allow admin to generate daily trips from imported timetable patterns.
-
-**Files to create/modify:**
-- `backend/api/admin/router.py` — Add trip generation endpoint
-- `backend/seeding/trip_generator.py` — New: generate daily trips from patterns
-- `backend/tests/test_trip_generation.py`
-
-**Database changes:** None (Trip/StopTime rows created by endpoint).
-
-**APIs added:**
-- `POST /api/admin/trips/generate` — Generate daily trips from imported patterns
-
-**Tests:** Generate trips for FR-04. Verify correct count (97). Verify offsets match canonical pattern. Verify idempotency.
-
-**Dependencies:** None new.
-
-**Expected result:** Admin can populate the database with realistic daily trips.
-
-**Commit message:** `feat: add admin endpoint for daily trip generation from timetable patterns`
-
----
-
-### Phase 6: Frontend Integration Readiness
-
-**Goal:** Finalize all API contracts the frontend needs.
-
-**Files to create/modify:**
-- `backend/api/transit/schemas.py` — Finalize all response schemas
-- `backend/api/transit/realtime/schemas.py` — Finalize realtime schemas
-- `backend/api/transit/journey_schemas.py` — Add route geometry to journey legs
-- `backend/tests/test_frontend_contract.py` — Validate all response shapes
-
-**Database changes:** None.
-
-**APIs added/changed:**
-- Journey search response includes route geometry per ride leg
-- All endpoints return consistent, documented response shapes
-
-**Tests:** Validate every endpoint response matches documented schema. Verify CORS headers. Verify no authentication required for public transit data.
-
-**Dependencies:** None new.
-
-**Expected result:** Frontend developer can integrate against stable, documented API contracts.
-
-**Commit message:** `feat: finalize frontend API contracts for map integration`
+| Component | Classification | Status |
+|---|---|---|
+| Agencies/routes/stops/timetables/import | Deterministic | Verified foundation |
+| PostGIS spatial queries, Nominatim geocoding | Geospatial | Verified foundation, being exposed as tools |
+| OSRM route geometry | Geospatial | Verified foundation, coverage-limited |
+| Bus simulation engine | Deterministic | Verified foundation |
+| Dijkstra / journey search | Deterministic | Verified foundation, extending with filters (P0) |
+| Fares (`FareRule`) | Deterministic | Verified foundation |
+| Ticketing + QR | Deterministic | Verified foundation |
+| Authentication | Deterministic | Verified foundation |
+| Admin API | Deterministic | Verified foundation, partial |
+| ASR / TTS | AI/ML (dedicated speech model) | New build (P0 English / P1 Urdu) |
+| Language detection/normalization | AI/ML (lightweight) or rule-based | New build, part of Layer 1 |
+| Qwen Journey Planner (intent, clarification, tool selection, narration) | AI/ML (agent) | New build (P0) |
+| Location/place resolution logic | Geospatial (exposed as a tool) | Mostly-existing, new packaging (P0) |
+| ETA ML model | AI/ML | New build, staged (P1) |
+| Map rendering, live location UI | Frontend | New build (P0), consumes existing/extended backend contracts |
+| Realtime vehicle layer on map | Frontend + existing backend | New build (P0), consumes existing data |
 
 ---
 
-## N. External Dependencies
+## 14. Global Constraints (unchanged, restated as non-negotiable)
 
-| Dependency | Purpose | Required At | API Key? | Open/Self-Hosted? |
-|-----------|---------|-------------|----------|-------------------|
-| **Nominatim** | Stop geocoding | Build time (one-time script) | No (polite usage) | Open (OSM) |
-| **OSRM demo** | Route geometry | Build time (one-time script) | No | Open (demo server) |
-| **OSRM self-hosted** | Route geometry (production) | Runtime (optional) | No | Self-hosted Docker |
-| **OpenStreetMap data** | OSRM routing data | Build time (for OSRM) | No | Open (ODbL) |
-| **MapLibre** | Frontend map rendering | Frontend only | No | Open (BSD) |
-
-### What Can Be Done Entirely Locally
-
-- All backend code changes
-- Database migrations
-- Unit tests
-- Integration tests (with Docker PostgreSQL/PostGIS)
-- Trip generation
-- Simulation
-
-### What Requires Network Access (One-Time)
-
-- Stop geocoding via Nominatim (one script run, ~80 requests at 1/sec = ~2 minutes)
-- Route geometry via OSRM (one script run, ~28 routes)
-
----
-
-## O. Risks / Unresolved Questions
-
-### High Risk
-
-1. **Ambiguous stop names**: Some stop names (e.g., "G-9 Markaz") may geocode to wrong locations or multiple candidates. Mitigation: validate within Islamabad/Rawalpindi bounding box; flag ambiguous results for manual review.
-
-2. **Missing coordinates for key stops**: If critical Red Line interior stops (Waris Khan, Rehmanabad, etc.) can't be geocoded, the Red Line route geometry can't be generated. Mitigation: these are well-known locations; Nominatim should handle them. Worst case: manual coordinate entry for ~10 stops.
-
-3. **OSRM accuracy for feeder routes**: Feeder routes may use narrow residential roads that OSRM doesn't weight correctly. Mitigation: mark geometry as `OSM-DERIVED`, not `OFFICIAL`.
-
-### Medium Risk
-
-4. **FR-07 ordering anomaly**: The `cda_nust_metro_station` stop in FR-07 appears between `cda_mehrabad` and `cda_bar_council` in the offset sequence, which may reflect a real routing quirk. Mitigation: import as-is from the official PDF; don't reorder.
-
-5. **FR-14 truncated departure**: The `cda_cda_stop` departure time is null in the PDF. Mitigation: set departure = arrival for this stop (no dwell modeled).
-
-6. **Red Line station count conflict**: 24 (official) vs. 23 (only ordered list found). Mitigation: import the 23 that are confirmed; note the discrepancy.
-
-### Low Risk
-
-7. **Rate limiting on Nominatim**: 80 requests at 1/sec is well within limits. No risk.
-
-8. **OSRM demo server availability**: Free but may be slow or rate-limited. Mitigation: retry logic; fallback to straight-line geometry.
-
-9. **Coordinate accuracy**: All coordinates are approximate, not survey-grade. This is acceptable for a transit planning app. Documented via `coordinate_confidence`.
+- The 532 existing tests must not regress.
+- No part of the already-verified foundation (§2) is rebuilt without a
+  concrete architectural reason — none exists at this time.
+- AI (any layer) never produces an authoritative route, fare, ETA,
+  walking distance, timetable, or delay value — it requests operations
+  from deterministic/geospatial layers and explains their results.
+- Every AI-dependent feature has a defined, working fallback so that
+  Alibaba service unavailability during the live demo degrades
+  gracefully rather than breaking the product.
