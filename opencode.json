@@ -24,6 +24,11 @@
         "-y",
         "@modelcontextprotocol/server-docker"
       ]
+    },
+    "figma": {
+      "type": "remote",
+      "url": "https://mcp.figma.com/mcp",
+      "oauth": {}
     }
   }
 }
