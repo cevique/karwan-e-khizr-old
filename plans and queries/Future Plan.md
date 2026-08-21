@@ -1,0 +1,6 @@
+- [ ] User Accounts
+- [ ] Admin Dashboard
+- [ ] Browser-level CORS system
+- [ ] Complete Ticket Purchasing System
+- [ ] Payment Providers like EasyPaisa Jazzcash
+- [ ] Production-grade deployment architecture
