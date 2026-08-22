@@ -195,7 +195,6 @@ export default function TrackingScreen() {
           </View>
         </View>
         <View style={styles.actionsRow}>
-          <Button label="Book" variant="filled" onPress={() => {}} disabled style={{ flex: 1 }} />
           <Button label="Share" variant="ghost" onPress={share} style={{ flex: 1 }} />
         </View>
       </View>

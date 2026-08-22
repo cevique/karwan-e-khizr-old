@@ -110,9 +110,6 @@ export default function HomeScreen() {
           />
           <View style={[styles.topChrome, { top: insets.top + spacing.sm }]}>
             <Text style={styles.wordmark}>Karwan e Khizr</Text>
-            <TouchableOpacity style={styles.glassButton} activeOpacity={0.7}>
-              <Ionicons name="notifications-outline" size={18} color={colors.textPrimary} />
-            </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={[styles.searchPill, { top: insets.top + spacing.xl + spacing.base }]}
@@ -193,16 +190,6 @@ const styles = StyleSheet.create({
     ...type.body,
     fontWeight: "700",
     color: colors.textPrimary,
-  },
-  glassButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
-    alignItems: "center",
-    justifyContent: "center",
   },
   searchPill: {
     position: "absolute",

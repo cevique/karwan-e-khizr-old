@@ -6,35 +6,21 @@ import { colors, spacing, type } from "@/constants/theme";
 interface AppBarProps {
   title: string;
   onBack?: () => void;
-  floating?: boolean;
 }
 
-interface IconButtonProps {
-  name: keyof typeof Ionicons.glyphMap;
-  onPress?: () => void;
-  floating?: boolean;
-}
-
-function BarButton({ name, onPress, floating }: IconButtonProps) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      disabled={!onPress}
-      style={[styles.button, floating && styles.buttonFloating]}
-      activeOpacity={0.7}
-    >
-      <Ionicons name={name} size={20} color={colors.textPrimary} />
-    </TouchableOpacity>
-  );
-}
-
-export function AppBar({ title, onBack, floating = false }: AppBarProps) {
+export function AppBar({ title, onBack }: AppBarProps) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.bar, { paddingTop: insets.top + spacing.sm }]}>
-      <BarButton name="chevron-back" onPress={onBack} floating={floating} />
-      {!floating && <Text style={styles.title}>{title}</Text>}
-      <BarButton name="ellipsis-horizontal" floating={floating} />
+      <TouchableOpacity
+        onPress={onBack}
+        disabled={!onBack}
+        style={styles.button}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+      </TouchableOpacity>
+      <Text style={styles.title}>{title}</Text>
     </View>
   );
 }
@@ -58,11 +44,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-  },
-  buttonFloating: {
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
   },
   title: {
     flex: 1,
