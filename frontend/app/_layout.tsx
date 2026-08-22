@@ -1,27 +1,48 @@
-import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import React, { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { StyleSheet } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import * as SplashScreen from "expo-splash-screen";
+import { colors } from "../constants/theme";
+
+// Keep splash screen visible while loading resources
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
+  useEffect(() => {
+    // Hide splash screen after initialization
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
   return (
-    <GestureHandlerRootView style={styles.flex}>
-      <BottomSheetModalProvider>
-        <StatusBar style="auto" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="plan" />
-          <Stack.Screen name="search-results" />
-          <Stack.Screen name="tracking/[vehicleId]" />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bgPrimary },
+            animation: "slide_from_right",
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="journey/search"
+            options={{
+              headerShown: false,
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="journey/[id]"
+            options={{
+              headerShown: false,
+              animation: "slide_from_right",
+            }}
+          />
         </Stack>
-      </BottomSheetModalProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-});

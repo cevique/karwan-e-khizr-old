@@ -1,52 +1,46 @@
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import { DEMO_MODE } from "../constants/config";
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
-  readonly status: number;
+  status: number;
+  data: any;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, data?: any) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.data = data;
   }
 }
 
-export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  let response: Response;
+export async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    ...options.headers,
+  };
+
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      headers: { Accept: "application/json", ...init?.headers },
-      ...init,
-    });
-  } catch (cause) {
-    throw new Error(`Network request to ${path} failed`, { cause });
-  }
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new ApiError(response.status, detail || response.statusText);
-  }
-  return (await response.json()) as T;
-}
+    const response = await fetch(url, { ...options, headers });
 
-interface ApiDetailEnvelope {
-  detail?: unknown;
-}
-
-export function describeApiError(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    try {
-      const parsed = JSON.parse(error.message) as ApiDetailEnvelope;
-      if (typeof parsed.detail === "string" && parsed.detail.trim().length > 0) {
-        return parsed.detail;
-      }
-    } catch {
-      const raw = error.message.trim();
-      if (raw.length > 0 && !raw.startsWith("{")) {
-        return raw;
-      }
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new ApiError(
+        response.status,
+        errorData?.detail || `HTTP Error ${response.status}`,
+        errorData
+      );
     }
-  } else if (error instanceof Error && error.message.length > 0) {
-    return fallback;
+
+    return (await response.json()) as T;
+  } catch (err: any) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(0, err.message || "Network request failed");
   }
-  return fallback;
 }

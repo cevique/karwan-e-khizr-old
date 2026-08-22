@@ -1,43 +1,44 @@
-import { useEffect, useRef, useState } from "react";
-import { listStops } from "@/services/transit";
-import type { Coordinates, StopRead } from "@/types/api";
-import { haversineMeters } from "@/utils/geo";
+import { useState, useEffect, useCallback } from "react";
+import { StopRead } from "../types";
+import { fetchStops } from "../services/transitService";
 
-const NEARBY_STOPS_RADIUS_M = 1500;
-const NEARBY_STOPS_LIMIT = 20;
-const REFETCH_DISTANCE_M = 200;
+export interface UseNearbyStopsResult {
+  stops: StopRead[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
+}
 
-export function useNearbyStops(location: Coordinates | null): StopRead[] {
+export function useNearbyStops(
+  latitude?: number,
+  longitude?: number,
+  radiusM: number = 2000
+): UseNearbyStopsResult {
   const [stops, setStops] = useState<StopRead[]>([]);
-  const fetchOriginRef = useRef<Coordinates | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStops = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchStops(latitude, longitude, radiusM);
+      setStops(data);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message || "Failed to load stops");
+    } finally {
+      setLoading(false);
+    }
+  }, [latitude, longitude, radiusM]);
 
   useEffect(() => {
-    if (!location) return;
-    const previous = fetchOriginRef.current;
-    if (
-      previous &&
-      haversineMeters(previous, location) < REFETCH_DISTANCE_M
-    ) {
-      return;
-    }
-    fetchOriginRef.current = location;
-    let cancelled = false;
-    listStops({
-      latitude: location.latitude,
-      longitude: location.longitude,
-      radiusM: NEARBY_STOPS_RADIUS_M,
-      limit: NEARBY_STOPS_LIMIT,
-    })
-      .then((result) => {
-        if (!cancelled) {
-          setStops(result.filter((stop) => stop.location !== null));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [location]);
+    loadStops();
+  }, [loadStops]);
 
-  return stops;
+  return {
+    stops,
+    loading,
+    error,
+    refetch: loadStops,
+  };
 }

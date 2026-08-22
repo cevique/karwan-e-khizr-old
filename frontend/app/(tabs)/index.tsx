@@ -1,141 +1,121 @@
-import { Ionicons } from "@expo/vector-icons";
-import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import React, { useRef, useMemo, useCallback } from "react";
+import { View, StyleSheet, Pressable } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NearbyBusCard } from "@/components/NearbyBusCard";
-import { ScreenShell } from "@/components/ScreenShell";
-import {
-  MapMarker,
-  TransitMapView,
-} from "@/components/TransitMapView";
-import { DEFAULT_REALTIME_POLL_INTERVAL_MS } from "@/constants/config";
-import { colors, spacing, type } from "@/constants/theme";
-import { useLocation } from "@/hooks/useLocation";
-import { useNearbyStops } from "@/hooks/useNearbyStops";
-import { useRealtimeVehicles } from "@/hooks/useRealtimeVehicles";
-import { haversineMeters } from "@/utils/geo";
+import BottomSheet from "@gorhom/bottom-sheet";
+import { Ionicons } from "@expo/vector-icons";
 
-const SHEET_SNAP_POINTS = [140, "45%", "90%"];
+import { colors, spacing, radii, elevation } from "../../constants/theme";
+import { Text } from "../../components/design-system/Text";
+import { SearchField } from "../../components/design-system/SearchField";
+import { MapView, MapControls } from "../../components/map";
+import { NearbyBusList } from "../../components/transit/NearbyBusList";
+import { DemoBanner } from "../../components/transit/DemoBanner";
+import { useLocation } from "../../hooks/useLocation";
+import { useRealtimeVehicles } from "../../hooks/useRealtimeVehicles";
+import { useNearbyStops } from "../../hooks/useNearbyStops";
+import { VehiclePositionRead, StopRead } from "../../types";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheet>(null);
-  const [recenterSignal, setRecenterSignal] = useState(0);
-  const { location } = useLocation();
-  const nearbyStops = useNearbyStops(location);
-  const { vehicles, isLoading, error } = useRealtimeVehicles(
-    DEFAULT_REALTIME_POLL_INTERVAL_MS,
-  );
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const snapPoints = useMemo(() => ["28%", "55%", "85%"], []);
 
-  const markers = useMemo<MapMarker[]>(
-    () => [
-      ...nearbyStops
-        .filter((stop) => stop.location)
-        .map((stop) => ({
-          id: stop.id,
-          coordinate: stop.location!,
-          kind: "stop" as const,
-          label: stop.name,
-        })),
-      ...vehicles.map((vehicle) => ({
-        id: vehicle.vehicle_id,
-        coordinate: vehicle.location,
-        kind: "vehicle" as const,
-      })),
-    ],
-    [nearbyStops, vehicles],
-  );
+  const { location: userLocation, requestPermission: locateUser } = useLocation();
+  const { vehicles } = useRealtimeVehicles();
+  const { stops } = useNearbyStops();
 
-  const renderItem = useCallback(
-    ({ item }: { item: (typeof vehicles)[number] }) => (
-      <View>
-        <NearbyBusCard
-          vehicle={item}
-          distanceMeters={
-            location
-              ? haversineMeters(location, item.location)
-              : null
-          }
-          onPress={() => router.push(`/tracking/${item.vehicle_id}`)}
-        />
-        <View style={styles.divider} />
-      </View>
-    ),
-    [location, router],
-  );
+  const handleSearchPress = () => {
+    router.push("/journey/search");
+  };
+
+  const handleVehiclePress = (vehicle: VehiclePositionRead) => {
+    // Open route search pre-filtered for vehicle route
+    router.push({
+      pathname: "/journey/search",
+      params: { preselectRouteId: vehicle.route_id },
+    });
+  };
+
+  const handleStopPress = (stop: StopRead) => {
+    router.push({
+      pathname: "/journey/search",
+      params: { originName: stop.name },
+    });
+  };
 
   return (
-    <ScreenShell>
-      <View style={styles.container}>
-        <View style={styles.mapArea}>
-          <TransitMapView
-            markers={markers}
-            userLocation={location}
-            recenterSignal={recenterSignal}
-            showUserLocationDot
-          />
-          <View style={[styles.topChrome, { top: insets.top + spacing.sm }]}>
-            <Text style={styles.wordmark}>Karwan e Khizr</Text>
+    <View style={styles.container}>
+      {/* 1. Map Canvas Background */}
+      <MapView
+        userLocation={userLocation}
+        stops={stops}
+        vehicles={vehicles}
+        onStopPress={handleStopPress}
+        onVehiclePress={handleVehiclePress}
+      />
+
+      {/* 2. Top Header & Search Overlay Container */}
+      <SafeAreaView style={styles.topOverlayContainer} pointerEvents="box-none">
+        {/* Branding & Notification Bar */}
+        <View style={styles.headerBar}>
+          <View style={styles.brandTitleCol}>
+            <Text variant="display" color={colors.textAccent} weight="700">
+              Karwan e Khizr
+            </Text>
+            <Text variant="subheading" color={colors.textUrdu} style={styles.urduTitle}>
+              کاروانِ خِضر
+            </Text>
           </View>
-          <TouchableOpacity
-            style={[styles.searchPill, { top: insets.top + spacing.xl + spacing.base }]}
-            activeOpacity={0.85}
-            onPress={() => router.push("/plan")}
+
+          {/* Notification Bell with Badge */}
+          <Pressable
+            style={({ pressed }) => [styles.iconBellButton, pressed && styles.pressed]}
+            onPress={() => {}}
           >
-            <Ionicons name="search" size={18} color={colors.textTertiary} />
-            <Text style={styles.searchPlaceholder}>Where are you going?</Text>
-            <Ionicons name="mic-outline" size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.recenterButton, { bottom: (SHEET_SNAP_POINTS[0] as number) + spacing.lg }]}
-            activeOpacity={0.8}
-            onPress={() => setRecenterSignal((value) => value + 1)}
-          >
-            <Ionicons name="locate" size={20} color={colors.accent} />
-          </TouchableOpacity>
+            <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
+            <View style={styles.notificationDot} />
+          </Pressable>
         </View>
 
-        <BottomSheet
-          ref={sheetRef}
-          index={0}
-          snapPoints={SHEET_SNAP_POINTS}
-          enableDynamicSizing={false}
-          handleIndicatorStyle={styles.handleIndicator}
-          backgroundStyle={styles.sheetBackground}
-        >
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Nearby Buses</Text>
-            {!error && !isLoading && (
-              <Text style={styles.sheetCount}>{vehicles.length} running</Text>
-            )}
-          </View>
-          {isLoading ? (
-            <StateRow text="Loading live vehicles..." />
-          ) : error ? (
-            <StateRow text="Can't reach the transit server. Check your connection and try again." />
-          ) : vehicles.length === 0 ? (
-            <StateRow text="No active buses right now. Vehicles appear here once trips are running." />
-          ) : (
-            <BottomSheetFlatList
-              data={vehicles.slice(0, 10)}
-              keyExtractor={(vehicle) => vehicle.vehicle_id}
-              renderItem={renderItem}
-              contentContainerStyle={{ paddingBottom: spacing.xl }}
-            />
-          )}
-        </BottomSheet>
-      </View>
-    </ScreenShell>
-  );
-}
+        {/* Search Field */}
+        <View style={styles.searchWrapper}>
+          <SearchField
+            placeholder="Where are you going?"
+            readOnlyContainer
+            onPressContainer={handleSearchPress}
+            onVoicePress={() => {}}
+          />
+        </View>
 
-function StateRow({ text }: { text: string }) {
-  return (
-    <View style={styles.stateWrap}>
-      <Text style={styles.stateText}>{text}</Text>
+        {/* Demo Mode Badge */}
+        <View style={styles.demoBannerWrapper}>
+          <DemoBanner />
+        </View>
+      </SafeAreaView>
+
+      {/* 3. Floating Map Controls */}
+      <MapControls
+        onLocatePress={locateUser}
+        onFilterPress={() => {}}
+        onFullscreenPress={() => {}}
+        style={styles.mapControlsPosition}
+      />
+
+      {/* 4. Bottom Sheet for Nearby Buses */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={0}
+        snapPoints={snapPoints}
+        handleComponent={null}
+        backgroundStyle={styles.bottomSheetBackground}
+      >
+        <NearbyBusList
+          vehicles={vehicles}
+          onVehiclePress={handleVehiclePress}
+          onViewAllPress={() => router.push("/journey/search")}
+        />
+      </BottomSheet>
     </View>
   );
 }
@@ -143,96 +123,63 @@ function StateRow({ text }: { text: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.bgPrimary,
   },
-  mapArea: {
-    flex: 1,
-  },
-  topChrome: {
+  topOverlayContainer: {
     position: "absolute",
-    left: spacing.base,
-    right: spacing.base,
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.base,
+  },
+  headerBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
   },
-  wordmark: {
-    ...type.body,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  searchPill: {
-    position: "absolute",
-    left: spacing.base,
-    right: spacing.base,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: 999,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.base,
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  searchPlaceholder: {
-    ...type.body,
-    color: colors.textTertiary,
+  brandTitleCol: {
     flex: 1,
   },
-  recenterButton: {
-    position: "absolute",
-    right: spacing.base,
+  urduTitle: {
+    marginTop: -2,
+  },
+  iconBellButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    ...elevation.soft,
   },
-  sheetBackground: {
+  notificationDot: {
+    position: "absolute",
+    top: 9,
+    right: 9,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.error,
+  },
+  searchWrapper: {
+    marginTop: spacing.xs,
+  },
+  demoBannerWrapper: {
+    marginTop: spacing.sm,
+    alignSelf: "center",
+  },
+  mapControlsPosition: {
+    top: 150,
+  },
+  bottomSheetBackground: {
     backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    ...elevation.floating,
   },
-  handleIndicator: {
-    backgroundColor: colors.divider,
-    width: 36,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  sheetTitle: {
-    ...type.heading,
-    color: colors.textPrimary,
-  },
-  sheetCount: {
-    ...type.caption,
-    color: colors.textSecondary,
-  },
-  stateWrap: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  stateText: {
-    ...type.caption,
-    color: colors.textSecondary,
-    lineHeight: 19,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.divider,
-    marginHorizontal: spacing.lg,
+  pressed: {
+    opacity: 0.8,
   },
 });

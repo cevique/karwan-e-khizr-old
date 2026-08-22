@@ -1,70 +1,47 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
-import { listActiveVehicles } from "@/services/realtime";
-import type { VehiclePositionRead } from "@/types/api";
+import { useState, useEffect, useCallback } from "react";
+import { VehiclePositionRead } from "../types";
+import { fetchRealtimeVehicles } from "../services/realtimeService";
+import { DEFAULT_REALTIME_POLL_INTERVAL_MS } from "../constants/config";
 
-interface UseRealtimeVehiclesOptions {
-  enabled?: boolean;
-}
-
-interface UseRealtimeVehiclesResult {
+export interface UseRealtimeVehiclesResult {
   vehicles: VehiclePositionRead[];
-  isLoading: boolean;
-  error: Error | null;
-  refresh: () => void;
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
 }
 
 export function useRealtimeVehicles(
-  intervalMs: number,
-  options: UseRealtimeVehiclesOptions = {},
+  routeId?: string,
+  pollIntervalMs: number = DEFAULT_REALTIME_POLL_INTERVAL_MS
 ): UseRealtimeVehiclesResult {
-  const { enabled = true } = options;
   const [vehicles, setVehicles] = useState<VehiclePositionRead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const hasLoadedRef = useRef(false);
-  const [tick, setTick] = useState(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!enabled) return;
-      let cancelled = false;
-
-      async function poll() {
-        try {
-          const positions = await listActiveVehicles();
-          if (cancelled) return;
-          setVehicles(positions);
-          setError(null);
-          hasLoadedRef.current = true;
-          setIsLoading(false);
-        } catch (cause) {
-          if (cancelled) return;
-          setError(cause instanceof Error ? cause : new Error(String(cause)));
-          setIsLoading(false);
-        }
-      }
-
-      if (!hasLoadedRef.current) {
-        setIsLoading(true);
-      }
-      void poll();
-      const timer = setInterval(poll, intervalMs);
-
-      return () => {
-        cancelled = true;
-        clearInterval(timer);
-      };
-    }, [enabled, intervalMs, tick]),
-  );
+  const loadData = useCallback(async () => {
+    try {
+      const data = await fetchRealtimeVehicles(routeId);
+      setVehicles(data);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message || "Failed to load vehicle telemetry");
+    } finally {
+      setLoading(false);
+    }
+  }, [routeId]);
 
   useEffect(() => {
-    return () => {
-      hasLoadedRef.current = false;
-    };
-  }, []);
+    loadData();
+    if (pollIntervalMs <= 0) return;
 
-  const refresh = useCallback(() => setTick((value) => value + 1), []);
+    const interval = setInterval(loadData, pollIntervalMs);
+    return () => clearInterval(interval);
+  }, [loadData, pollIntervalMs]);
 
-  return { vehicles, isLoading, error, refresh };
+  return {
+    vehicles,
+    loading,
+    error,
+    refetch: loadData,
+  };
 }
