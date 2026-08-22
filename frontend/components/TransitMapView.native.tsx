@@ -8,75 +8,23 @@ import {
   ViewAnnotation,
   type CameraRef,
 } from "@maplibre/maplibre-react-native";
-import {
-  Component,
-  memo,
-  ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
-import { Platform, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { DEMO_MODE, ISLAMABAD_CENTER, MAP_STYLE_URL } from "@/constants/config";
-import { colors, radii, spacing, type } from "@/constants/theme";
-import { haversineMeters } from "@/utils/geo";
-import type {
-  JourneyMapLine,
-  JourneyMapLineKind,
-} from "@/utils/journey";
+import { memo, useEffect, useMemo, useRef } from "react";
+import { StyleSheet, View } from "react-native";
+import { ISLAMABAD_CENTER, MAP_STYLE_URL } from "@/constants/config";
+import { colors, radii } from "@/constants/theme";
 import type { Coordinates } from "@/types/api";
+import { haversineMeters } from "@/utils/geo";
+import type { JourneyMapLine } from "@/utils/journey";
+import { DemoChip } from "./map/DemoChip";
+import { MapErrorBoundary, mapContainerStyle } from "./map/MapFallback";
+import {
+  buildLineCollection,
+  type TransitMapViewProps,
+} from "./map/mapTypes";
+
+export type { MapMarker } from "./map/mapTypes";
 
 const FOLLOW_REFLY_MIN_DISTANCE_M = 75;
-
-export interface MapMarker {
-  id: string;
-  coordinate: Coordinates;
-  kind: "stop" | "vehicle" | "origin" | "destination";
-  label?: string;
-}
-
-interface TransitMapViewProps {
-  markers: MapMarker[];
-  userLocation?: Coordinates | null;
-  recenterSignal?: number;
-  followCoordinate?: Coordinates | null;
-  lines?: JourneyMapLine[];
-  fitCoordinates?: [number, number][];
-  style?: ViewStyle;
-  showUserLocationDot?: boolean;
-}
-
-interface LineFeature {
-  type: "Feature";
-  properties: { kind: JourneyMapLineKind };
-  geometry: { type: "LineString"; coordinates: [number, number][] };
-}
-
-class MapErrorBoundary extends Component<
-  { children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    if (this.state.failed) return <MapFallback />;
-    return this.props.children;
-  }
-}
-
-function MapFallback() {
-  return (
-    <View style={[styles.container, styles.fallback]}>
-      <Ionicons name="map-outline" size={24} color={colors.textSecondary} />
-      <Text style={styles.fallbackTitle}>Map unavailable here</Text>
-      <Text style={styles.fallbackBody}>
-        The live map needs the development build. Nearby buses are listed below.
-      </Text>
-    </View>
-  );
-}
 
 function JourneyLineLayer({
   id,
@@ -88,14 +36,7 @@ function JourneyLineLayer({
   paint: Record<string, unknown>;
 }) {
   if (lines.length === 0) return null;
-  const collection = {
-    type: "FeatureCollection" as const,
-    features: lines.map<LineFeature>((line) => ({
-      type: "Feature",
-      properties: { kind: line.kind },
-      geometry: { type: "LineString", coordinates: line.coordinates },
-    })),
-  };
+  const collection = buildLineCollection(lines);
   return (
     <>
       <GeoJSONSource id={`${id}-source`} data={collection} />
@@ -190,7 +131,7 @@ function MapLibreInner({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[mapContainerStyle.container, styles.fill]}>
       <Map mapStyle={MAP_STYLE_URL} style={StyleSheet.absoluteFill}>
         <Camera
           ref={cameraRef}
@@ -244,11 +185,7 @@ function MapLibreInner({
           </ViewAnnotation>
         ))}
       </Map>
-      {DEMO_MODE ? (
-        <View pointerEvents="none" style={styles.demoChip}>
-          <Text style={styles.demoChipText}>Demo data — not live</Text>
-        </View>
-      ) : null}
+      <DemoChip />
     </View>
   );
 }
@@ -256,9 +193,6 @@ function MapLibreInner({
 const MemoizedMap = memo(MapLibreInner);
 
 export function TransitMapView(props: TransitMapViewProps) {
-  if (Platform.OS === "web") {
-    return <MapFallback />;
-  }
   return (
     <MapErrorBoundary>
       <MemoizedMap {...props} />
@@ -267,25 +201,8 @@ export function TransitMapView(props: TransitMapViewProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  fill: {
     flex: 1,
-    backgroundColor: "#E8EAE6",
-    overflow: "hidden",
-  },
-  fallback: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    padding: spacing.xl,
-  },
-  fallbackTitle: {
-    ...type.heading,
-    color: colors.textPrimary,
-  },
-  fallbackBody: {
-    ...type.caption,
-    color: colors.textSecondary,
-    textAlign: "center",
   },
   vehiclePin: {
     width: 22,
@@ -320,19 +237,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
     borderWidth: 3,
     borderColor: colors.surface,
-  },
-  demoChip: {
-    position: "absolute",
-    top: spacing.md,
-    left: spacing.md,
-    backgroundColor: "#B45309",
-    borderRadius: radii.button,
-    paddingVertical: 4,
-    paddingHorizontal: spacing.md,
-  },
-  demoChipText: {
-    ...type.caption,
-    color: colors.surface,
-    fontWeight: "700",
   },
 });
