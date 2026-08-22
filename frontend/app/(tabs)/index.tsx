@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NearbyBusCard } from "@/components/NearbyBusCard";
@@ -13,53 +13,22 @@ import {
 import { DEFAULT_REALTIME_POLL_INTERVAL_MS } from "@/constants/config";
 import { colors, spacing, type } from "@/constants/theme";
 import { useLocation } from "@/hooks/useLocation";
+import { useNearbyStops } from "@/hooks/useNearbyStops";
 import { useRealtimeVehicles } from "@/hooks/useRealtimeVehicles";
-import { listStops } from "@/services/transit";
-import type { Coordinates, StopRead } from "@/types/api";
 import { haversineMeters } from "@/utils/geo";
 
 const SHEET_SNAP_POINTS = [140, "45%", "90%"];
-const NEARBY_STOPS_RADIUS_M = 1500;
-const NEARBY_STOPS_LIMIT = 20;
-const NEARBY_REFETCH_DISTANCE_M = 200;
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheet>(null);
   const [recenterSignal, setRecenterSignal] = useState(0);
-  const [nearbyStops, setNearbyStops] = useState<StopRead[]>([]);
   const { location } = useLocation();
+  const nearbyStops = useNearbyStops(location);
   const { vehicles, isLoading, error } = useRealtimeVehicles(
     DEFAULT_REALTIME_POLL_INTERVAL_MS,
   );
-  const nearbyFetchOriginRef = useRef<Coordinates | null>(null);
-
-  useEffect(() => {
-    if (!location) return;
-    const fetchOrigin = nearbyFetchOriginRef.current;
-    if (
-      fetchOrigin &&
-      haversineMeters(fetchOrigin, location) < NEARBY_REFETCH_DISTANCE_M
-    ) {
-      return;
-    }
-    nearbyFetchOriginRef.current = location;
-    let cancelled = false;
-    listStops({
-      latitude: location.latitude,
-      longitude: location.longitude,
-      radiusM: NEARBY_STOPS_RADIUS_M,
-      limit: NEARBY_STOPS_LIMIT,
-    })
-      .then((stops) => {
-        if (!cancelled) setNearbyStops(stops.filter((stop) => stop.location !== null));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [location]);
 
   const markers = useMemo<MapMarker[]>(
     () => [

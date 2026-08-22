@@ -18,6 +18,7 @@ import {
   type MapMarker,
 } from "@/components/TransitMapView";
 import { colors, radii, spacing, type } from "@/constants/theme";
+import { describeApiError } from "@/services/api";
 import { quoteJourney } from "@/services/fares";
 import { searchJourneys } from "@/services/journeys";
 import type {
@@ -132,8 +133,12 @@ export default function SearchResultsScreen() {
           setResults(cards);
           setSelectedIndex(0);
         }
-      } catch {
-        if (!cancelled) setError("Couldn't find journeys between these stops.");
+      } catch (cause) {
+        if (!cancelled) {
+          setError(
+            describeApiError(cause, "Couldn't find journeys between these stops."),
+          );
+        }
       }
     }
 
