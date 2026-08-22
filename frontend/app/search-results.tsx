@@ -13,6 +13,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppBar } from "@/components/ui/AppBar";
 import { Chip } from "@/components/ui/Chip";
 import { RouteCircle } from "@/components/ui/RouteCircle";
+import {
+  TransitMapView,
+  type MapMarker,
+} from "@/components/TransitMapView";
 import { colors, radii, spacing, type } from "@/constants/theme";
 import { quoteJourney } from "@/services/fares";
 import { searchJourneys } from "@/services/journeys";
@@ -22,7 +26,12 @@ import type {
   JourneyRead,
   RoutingObjective,
 } from "@/types/api";
-import { formatDuration, legSignature, toJourneySummary } from "@/utils/journey";
+import {
+  formatDuration,
+  journeyMapLines,
+  legSignature,
+  toJourneySummary,
+} from "@/utils/journey";
 
 const OBJECTIVES: RoutingObjective[] = [
   "fastest",
@@ -53,6 +62,31 @@ export default function SearchResultsScreen() {
 
   const [results, setResults] = useState<ResultCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const selectedJourney = results?.[selectedIndex]?.journey ?? null;
+  const selectedLines = useMemo(
+    () => (selectedJourney ? journeyMapLines(selectedJourney) : []),
+    [selectedJourney],
+  );
+  const fitCoordinates = useMemo(() => {
+    if (!origin || !destination) return [];
+    return [
+      ...selectedLines.flatMap((line) => line.coordinates),
+      [origin.longitude, origin.latitude] as [number, number],
+      [destination.longitude, destination.latitude] as [number, number],
+    ];
+  }, [selectedLines, origin, destination]);
+  const previewMarkers = useMemo<MapMarker[]>(
+    () =>
+      origin && destination
+        ? [
+            { id: "origin", coordinate: origin, kind: "origin" },
+            { id: "destination", coordinate: destination, kind: "destination" },
+          ]
+        : [],
+    [origin, destination],
+  );
 
   useEffect(() => {
     if (!origin || !destination) return;
@@ -94,7 +128,10 @@ export default function SearchResultsScreen() {
             }
           }),
         );
-        if (!cancelled) setResults(cards);
+        if (!cancelled) {
+          setResults(cards);
+          setSelectedIndex(0);
+        }
       } catch {
         if (!cancelled) setError("Couldn't find journeys between these stops.");
       }
@@ -116,13 +153,22 @@ export default function SearchResultsScreen() {
         ]}
       >
         {origin && destination ? (
-          <View style={styles.tripSummary}>
-            <SummaryRow icon="radio-button-on-outline" label={params.originName ?? ""} />
-            <View style={styles.summaryConnector}>
-              <Ionicons name="arrow-down" size={14} color={colors.textTertiary} />
+          <>
+            <View style={styles.mapPreview}>
+              <TransitMapView
+                markers={previewMarkers}
+                lines={selectedLines}
+                fitCoordinates={fitCoordinates}
+              />
             </View>
-            <SummaryRow icon="location-sharp" label={params.destinationName ?? ""} />
-          </View>
+            <View style={styles.tripSummary}>
+              <SummaryRow icon="radio-button-on-outline" label={params.originName ?? ""} />
+              <View style={styles.summaryConnector}>
+                <Ionicons name="arrow-down" size={14} color={colors.textTertiary} />
+              </View>
+              <SummaryRow icon="location-sharp" label={params.destinationName ?? ""} />
+            </View>
+          </>
         ) : (
           <Text style={styles.stateText}>No trip selected.</Text>
         )}
@@ -142,11 +188,17 @@ export default function SearchResultsScreen() {
           </Text>
         ) : (
           results.map((card, index) => (
-            <ResultCardView
+            <TouchableOpacity
               key={`${legSignature(card.journey)}-${index}`}
-              card={card}
-              isBest={index === 0}
-            />
+              activeOpacity={0.85}
+              onPress={() => setSelectedIndex(index)}
+            >
+              <ResultCardView
+                card={card}
+                isBest={index === 0}
+                isSelected={index === selectedIndex}
+              />
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -163,13 +215,26 @@ function SummaryRow({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; lab
   );
 }
 
-function ResultCardView({ card, isBest }: { card: ResultCard; isBest: boolean }) {
+function ResultCardView({
+  card,
+  isBest,
+  isSelected,
+}: {
+  card: ResultCard;
+  isBest: boolean;
+  isSelected: boolean;
+}) {
   const rideLegs = card.journey.legs.filter(
     (leg): leg is Extract<JourneyLegRead, { type: "ride" }> => leg.type === "ride",
   );
   const walkMeters = card.journey.total_walk_m;
   return (
-    <View style={[styles.card, isBest && styles.cardBest]}>
+    <View
+      style={[
+        styles.card,
+        (isBest || isSelected) && styles.cardSelected,
+      ]}
+    >
       {isBest && (
         <View style={styles.bestTagWrap}>
           <Chip label="Best match" selected />
@@ -282,8 +347,15 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     gap: spacing.md,
   },
-  cardBest: {
+  cardSelected: {
     borderColor: colors.accent,
+  },
+  mapPreview: {
+    height: 240,
+    borderRadius: radii.card,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
   },
   bestTagWrap: {
     position: "absolute",

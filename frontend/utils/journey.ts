@@ -44,3 +44,45 @@ export function toJourneySummary(
     })),
   };
 }
+
+export type JourneyMapLineKind = "ride" | "walk" | "approximate";
+
+export interface JourneyMapLine {
+  id: string;
+  kind: JourneyMapLineKind;
+  coordinates: [number, number][];
+}
+
+export function journeyMapLines(journey: JourneyRead): JourneyMapLine[] {
+  return journey.legs.flatMap((leg, index): JourneyMapLine[] => {
+    if (leg.type === "walk") {
+      return [
+        {
+          id: `walk-${index}`,
+          kind: "walk",
+          coordinates: [
+            [leg.from_location.longitude, leg.from_location.latitude],
+            [leg.to_location.longitude, leg.to_location.latitude],
+          ],
+        },
+      ];
+    }
+    const mapped = leg.route_geometry.coordinates;
+    if (mapped && mapped.length > 1) {
+      return [{ id: `ride-${index}`, kind: "ride", coordinates: mapped }];
+    }
+    const board = leg.board_stop.location;
+    const alight = leg.alight_stop.location;
+    if (!board || !alight) return [];
+    return [
+      {
+        id: `approx-${index}`,
+        kind: "approximate",
+        coordinates: [
+          [board.longitude, board.latitude],
+          [alight.longitude, alight.latitude],
+        ],
+      },
+    ];
+  });
+}
