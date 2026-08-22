@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { listActiveVehicles } from "@/services/realtime";
 import type { VehiclePositionRead } from "@/types/api";
+
+interface UseRealtimeVehiclesOptions {
+  enabled?: boolean;
+}
 
 interface UseRealtimeVehiclesResult {
   vehicles: VehiclePositionRead[];
@@ -11,50 +16,53 @@ interface UseRealtimeVehiclesResult {
 
 export function useRealtimeVehicles(
   intervalMs: number,
+  options: UseRealtimeVehiclesOptions = {},
 ): UseRealtimeVehiclesResult {
+  const { enabled = true } = options;
   const [vehicles, setVehicles] = useState<VehiclePositionRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const hasLoadedRef = useRef(false);
   const [tick, setTick] = useState(0);
-  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!enabled) return;
+      let cancelled = false;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const positions = await listActiveVehicles();
-        if (!cancelled && mountedRef.current) {
+      async function poll() {
+        try {
+          const positions = await listActiveVehicles();
+          if (cancelled) return;
           setVehicles(positions);
           setError(null);
-        }
-      } catch (cause) {
-        if (!cancelled && mountedRef.current) {
+          hasLoadedRef.current = true;
+          setIsLoading(false);
+        } catch (cause) {
+          if (cancelled) return;
           setError(cause instanceof Error ? cause : new Error(String(cause)));
-        }
-      } finally {
-        if (!cancelled && mountedRef.current) {
           setIsLoading(false);
         }
       }
-    }
 
-    setIsLoading(true);
-    void poll();
-    const timer = setInterval(poll, intervalMs);
+      if (!hasLoadedRef.current) {
+        setIsLoading(true);
+      }
+      void poll();
+      const timer = setInterval(poll, intervalMs);
 
+      return () => {
+        cancelled = true;
+        clearInterval(timer);
+      };
+    }, [enabled, intervalMs, tick]),
+  );
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
-      clearInterval(timer);
+      hasLoadedRef.current = false;
     };
-  }, [intervalMs, tick]);
+  }, []);
 
   const refresh = useCallback(() => setTick((value) => value + 1), []);
 

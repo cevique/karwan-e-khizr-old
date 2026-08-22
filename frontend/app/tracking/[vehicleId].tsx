@@ -16,9 +16,9 @@ import { RouteCircle } from "@/components/ui/RouteCircle";
 import { TransitMapView, type MapMarker } from "@/components/TransitMapView";
 import { DEFAULT_REALTIME_POLL_INTERVAL_MS } from "@/constants/config";
 import { colors, elevation, radii, spacing, type } from "@/constants/theme";
-import { listActiveVehicles, getVehicleEta } from "@/services/realtime";
+import { useVehicleTracking } from "@/hooks/useVehicleTracking";
 import { getRoute } from "@/services/transit";
-import type { RouteDetail, VehicleETAList, VehiclePositionRead } from "@/types/api";
+import type { RouteDetail } from "@/types/api";
 import { etaMinutes } from "@/utils/time";
 
 const ARRIVING_SOON_MIN = 5;
@@ -27,39 +27,12 @@ export default function TrackingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { vehicleId } = useLocalSearchParams<{ vehicleId: string }>();
-  const [vehicle, setVehicle] = useState<VehiclePositionRead | null>(null);
-  const [etas, setEtas] = useState<VehicleETAList | null>(null);
+  const { vehicle, etas, error } = useVehicleTracking(
+    vehicleId,
+    DEFAULT_REALTIME_POLL_INTERVAL_MS,
+  );
   const [route, setRoute] = useState<RouteDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pulse] = useState(() => new Animated.Value(1));
-
-  useEffect(() => {
-    if (!vehicleId) return;
-    let cancelled = false;
-
-    const tick = async () => {
-      try {
-        const [vehicles, etaData] = await Promise.all([
-          listActiveVehicles(),
-          getVehicleEta(vehicleId),
-        ]);
-        if (cancelled) return;
-        const match = vehicles.find((v) => v.vehicle_id === vehicleId) ?? null;
-        setVehicle(match);
-        setEtas(etaData);
-        setError(match ? null : "This vehicle is no longer running.");
-      } catch {
-        if (!cancelled) setError("Lost connection to the transit server.");
-      }
-    };
-
-    void tick();
-    const interval = setInterval(tick, DEFAULT_REALTIME_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [vehicleId]);
 
   useEffect(() => {
     if (!vehicle?.route_id || route) return;
