@@ -1,3 +1,5 @@
+import { DEMO_MODE } from "@/constants/config";
+import { demoListStops } from "@/mocks/demoData";
 import { fetchJson } from "./api";
 import type {
   RouteDetail,
@@ -26,6 +28,9 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 }
 
 export function listStops(params: ListStopsParams = {}): Promise<StopRead[]> {
+  if (DEMO_MODE) {
+    return Promise.resolve(demoListStops(params));
+  }
   const query = buildQuery({
     latitude: params.latitude,
     longitude: params.longitude,

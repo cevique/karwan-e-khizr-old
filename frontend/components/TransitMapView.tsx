@@ -17,7 +17,7 @@ import {
   useRef,
 } from "react";
 import { Platform, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { ISLAMABAD_CENTER, MAP_STYLE_URL } from "@/constants/config";
+import { DEMO_MODE, ISLAMABAD_CENTER, MAP_STYLE_URL } from "@/constants/config";
 import { colors, radii, spacing, type } from "@/constants/theme";
 import { haversineMeters } from "@/utils/geo";
 import type {
@@ -244,6 +244,11 @@ function MapLibreInner({
           </ViewAnnotation>
         ))}
       </Map>
+      {DEMO_MODE ? (
+        <View pointerEvents="none" style={styles.demoChip}>
+          <Text style={styles.demoChipText}>Demo data — not live</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -315,5 +320,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
     borderWidth: 3,
     borderColor: colors.surface,
+  },
+  demoChip: {
+    position: "absolute",
+    top: spacing.md,
+    left: spacing.md,
+    backgroundColor: "#B45309",
+    borderRadius: radii.button,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.md,
+  },
+  demoChipText: {
+    ...type.caption,
+    color: colors.surface,
+    fontWeight: "700",
   },
 });
