@@ -97,7 +97,7 @@ export default function RouteDetailScreen() {
             </Text>
           ) : (
             <Text style={styles.stateText}>
-              A precise map shape for this route isn't available yet.
+              A precise map shape for this route isn&apos;t available yet.
             </Text>
           )}
         </ScrollView>

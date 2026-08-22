@@ -16,7 +16,10 @@ import {
 import { Platform, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { ISLAMABAD_CENTER, MAP_STYLE_URL } from "@/constants/config";
 import { colors, radii, spacing, type } from "@/constants/theme";
+import { haversineMeters } from "@/utils/geo";
 import type { Coordinates } from "@/types/api";
+
+const FOLLOW_REFLY_MIN_DISTANCE_M = 75;
 
 export interface MapMarker {
   id: string;
@@ -29,6 +32,7 @@ interface TransitMapViewProps {
   markers: MapMarker[];
   userLocation?: Coordinates | null;
   recenterSignal?: number;
+  followCoordinate?: Coordinates | null;
   style?: ViewStyle;
   showUserLocationDot?: boolean;
 }
@@ -63,12 +67,15 @@ function MapLibreInner({
   markers,
   userLocation,
   recenterSignal,
+  followCoordinate,
   showUserLocationDot,
 }: TransitMapViewProps) {
   const cameraRef = useRef<CameraRef>(null);
+  const lastFollowedRef = useRef<Coordinates | null>(null);
 
   useEffect(() => {
     if (recenterSignal && userLocation) {
+      lastFollowedRef.current = null;
       cameraRef.current?.flyTo({
         center: [userLocation.longitude, userLocation.latitude],
         zoom: 14,
@@ -76,6 +83,23 @@ function MapLibreInner({
       });
     }
   }, [recenterSignal]);
+
+  useEffect(() => {
+    if (!followCoordinate) return;
+    const last = lastFollowedRef.current;
+    if (
+      last &&
+      haversineMeters(last, followCoordinate) < FOLLOW_REFLY_MIN_DISTANCE_M
+    ) {
+      return;
+    }
+    lastFollowedRef.current = followCoordinate;
+    cameraRef.current?.flyTo({
+      center: [followCoordinate.longitude, followCoordinate.latitude],
+      zoom: 15,
+      duration: 600,
+    });
+  }, [followCoordinate]);
 
   const initialCenter: [number, number] = userLocation
     ? [userLocation.longitude, userLocation.latitude]

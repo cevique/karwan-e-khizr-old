@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NearbyBusCard } from "@/components/NearbyBusCard";
@@ -15,11 +15,13 @@ import { colors, spacing, type } from "@/constants/theme";
 import { useLocation } from "@/hooks/useLocation";
 import { useRealtimeVehicles } from "@/hooks/useRealtimeVehicles";
 import { listStops } from "@/services/transit";
-import type { StopRead } from "@/types/api";
-import { useEffect } from "react";
+import type { Coordinates, StopRead } from "@/types/api";
 import { haversineMeters } from "@/utils/geo";
 
 const SHEET_SNAP_POINTS = [140, "45%", "90%"];
+const NEARBY_STOPS_RADIUS_M = 1500;
+const NEARBY_STOPS_LIMIT = 20;
+const NEARBY_REFETCH_DISTANCE_M = 200;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -31,22 +33,29 @@ export default function HomeScreen() {
   const { vehicles, isLoading, error } = useRealtimeVehicles(
     DEFAULT_REALTIME_POLL_INTERVAL_MS,
   );
+  const nearbyFetchOriginRef = useRef<Coordinates | null>(null);
 
   useEffect(() => {
     if (!location) return;
+    const fetchOrigin = nearbyFetchOriginRef.current;
+    if (
+      fetchOrigin &&
+      haversineMeters(fetchOrigin, location) < NEARBY_REFETCH_DISTANCE_M
+    ) {
+      return;
+    }
+    nearbyFetchOriginRef.current = location;
     let cancelled = false;
     listStops({
       latitude: location.latitude,
       longitude: location.longitude,
-      radiusM: 1500,
-      limit: 20,
+      radiusM: NEARBY_STOPS_RADIUS_M,
+      limit: NEARBY_STOPS_LIMIT,
     })
       .then((stops) => {
         if (!cancelled) setNearbyStops(stops.filter((stop) => stop.location !== null));
       })
-      .catch(() => {
-        if (!cancelled) setNearbyStops([]);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

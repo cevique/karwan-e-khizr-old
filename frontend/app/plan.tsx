@@ -120,7 +120,9 @@ export default function PlanScreen() {
             placeholderTextColor={colors.textTertiary}
             value={originQuery}
             onChangeText={(text) => {
-              setOrigin(text === "" ? null : origin);
+              setOrigin((current) =>
+                current !== null && current.name === text ? current : null,
+              );
               setOriginQuery(text);
               setActiveField("origin");
             }}
@@ -141,7 +143,9 @@ export default function PlanScreen() {
             placeholderTextColor={colors.textTertiary}
             value={destinationQuery}
             onChangeText={(text) => {
-              setDestination(text === "" ? null : destination);
+              setDestination((current) =>
+                current !== null && current.name === text ? current : null,
+              );
               setDestinationQuery(text);
               setActiveField("destination");
             }}
@@ -182,7 +186,7 @@ export default function PlanScreen() {
                     <Text style={styles.suggestionName}>{item.name}</Text>
                     {!item.location && (
                       <Text style={styles.suggestionMeta}>
-                        No coordinates yet — can't be used in search
+                        No coordinates yet — can&apos;t be used in search
                       </Text>
                     )}
                   </View>

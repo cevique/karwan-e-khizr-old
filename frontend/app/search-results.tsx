@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -23,13 +23,6 @@ import type {
   RoutingObjective,
 } from "@/types/api";
 import { formatDuration, legSignature, toJourneySummary } from "@/utils/journey";
-
-interface SearchResultsParams {
-  origin: string;
-  destination: string;
-  originName: string;
-  destinationName: string;
-}
 
 const OBJECTIVES: RoutingObjective[] = [
   "fastest",

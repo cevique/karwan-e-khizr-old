@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Animated,
   Easing,
@@ -31,7 +31,7 @@ export default function TrackingScreen() {
   const [etas, setEtas] = useState<VehicleETAList | null>(null);
   const [route, setRoute] = useState<RouteDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [pulse] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (!vehicleId) return;
@@ -103,7 +103,7 @@ export default function TrackingScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [arrivingSoon]);
+  }, [arrivingSoon, pulse]);
 
   const markers = useMemo<MapMarker[]>(
     () =>
@@ -132,7 +132,11 @@ export default function TrackingScreen() {
 
   return (
     <View style={styles.container}>
-      <TransitMapView markers={markers} userLocation={null} />
+      <TransitMapView
+        markers={markers}
+        userLocation={null}
+        followCoordinate={vehicle?.location ?? null}
+      />
 
       <TouchableOpacity
         style={[styles.backButton, { top: insets.top + spacing.md }]}
@@ -185,7 +189,7 @@ export default function TrackingScreen() {
             </Text>
             <Text style={styles.routeMeta}>
               {nextStopEta
-                ? `${Math.max(0, Math.round((new Date(nextStopEta.estimated_arrival).getTime() - Date.now()) / 60000))} min away · ${vehicle?.speed_kmh !== null && vehicle?.speed_kmh !== undefined ? `${Math.round(vehicle.speed_kmh)} km/h` : "live"}`
+                ? `${etaMinutes(nextStopEta.estimated_arrival) ?? 0} min away · ${vehicle?.speed_kmh !== null && vehicle?.speed_kmh !== undefined ? `${Math.round(vehicle.speed_kmh)} km/h` : "live"}`
                 : "Waiting for live data..."}
             </Text>
           </View>
